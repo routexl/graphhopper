@@ -18,12 +18,14 @@
 package com.graphhopper.routing;
 
 import com.graphhopper.routing.util.*;
-import com.graphhopper.storage.EdgeEntry;
+import com.graphhopper.storage.SPTEntry;
 import com.graphhopper.storage.Graph;
 import com.graphhopper.storage.NodeAccess;
 import com.graphhopper.util.EdgeExplorer;
 import com.graphhopper.util.EdgeIterator;
 import com.graphhopper.util.EdgeIteratorState;
+import java.util.Collections;
+import java.util.List;
 
 /**
  * @author Peter Karich
@@ -78,7 +80,7 @@ public abstract class AbstractRoutingAlgorithm implements RoutingAlgorithm
         return additionalEdgeFilter == null || additionalEdgeFilter.accept(iter);
     }
 
-    protected void updateBestPath( EdgeIteratorState edgeState, EdgeEntry bestEdgeEntry, int traversalId )
+    protected void updateBestPath( EdgeIteratorState edgeState, SPTEntry bestSPTEntry, int traversalId )
     {
     }
 
@@ -90,15 +92,15 @@ public abstract class AbstractRoutingAlgorithm implements RoutingAlgorithm
         alreadyRun = true;
     }
 
-    protected EdgeEntry createEdgeEntry( int node, double dist )
+    protected SPTEntry createSPTEntry( int node, double weight )
     {
-        return new EdgeEntry(EdgeIterator.NO_EDGE, node, dist);
+        return new SPTEntry(EdgeIterator.NO_EDGE, node, weight);
     }
 
     /**
      * To be overwritten from extending class. Should we make this available in RoutingAlgorithm
      * interface?
-     * <p/>
+     * <p>
      * @return true if finished.
      */
     protected abstract boolean finished();
@@ -106,12 +108,18 @@ public abstract class AbstractRoutingAlgorithm implements RoutingAlgorithm
     /**
      * To be overwritten from extending class. Should we make this available in RoutingAlgorithm
      * interface?
-     * <p/>
+     * <p>
      * @return true if finished.
      */
     protected abstract Path extractPath();
 
     protected abstract boolean isWeightLimitExceeded();
+
+    @Override
+    public List<Path> calcPaths( int from, int to )
+    {
+        return Collections.singletonList(calcPath(from, to));
+    }
 
     protected Path createEmptyPath()
     {

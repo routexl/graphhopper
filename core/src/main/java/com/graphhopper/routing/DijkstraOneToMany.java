@@ -25,12 +25,13 @@ import com.graphhopper.storage.Graph;
 import com.graphhopper.util.EdgeIterator;
 import com.graphhopper.util.Helper;
 import gnu.trove.list.array.TIntArrayList;
+
 import java.util.Arrays;
 
 /**
  * A simple dijkstra tuned to perform one to many queries more efficient than Dijkstra. Old data
  * structures are cached between requests and potentially reused. Useful for CH preparation.
- * <p/>
+ * <p>
  * @author Peter Karich
  */
 public class DijkstraOneToMany extends AbstractRoutingAlgorithm
@@ -230,7 +231,7 @@ public class DijkstraOneToMany extends AbstractRoutingAlgorithm
     }
 
     /**
-     * List currently used memory in MB (approximatively)
+     * List currently used memory in MB (approximately)
      */
     public String getMemoryUsageAsString()
     {

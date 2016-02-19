@@ -23,11 +23,17 @@ import com.graphhopper.util.Translation;
 /**
  * This class provides methods to define how a value (like speed or direction) converts to a flag
  * (currently an integer value), which is stored in an edge .
- * <p/>
+ * <p>
  * @author Peter Karich
  */
 public interface FlagEncoder extends TurnCostEncoder
 {
+    /**
+     * @return the version of this FlagEncoder to enforce none-compatibility when new attributes are
+     * introduced
+     */
+    int getVersion();
+
     /**
      * @return the maximum speed in km/h
      */
@@ -70,12 +76,12 @@ public interface FlagEncoder extends TurnCostEncoder
     long setProperties( double speed, boolean forward, boolean backward );
 
     /**
-     * Reports wether the edge is available in forward direction for a certain vehicle
+     * Reports whether the edge is available in forward direction for a certain vehicle
      */
     boolean isForward( long flags );
 
     /**
-     * Reports wether the edge is available in backward direction for a certain vehicle
+     * Reports whether the edge is available in backward direction for a certain vehicle
      */
     boolean isBackward( long flags );
 
@@ -85,7 +91,7 @@ public interface FlagEncoder extends TurnCostEncoder
      * Currently this means starting from 100, and subclasses of this class start from 10000 and so on.
      */
     /**
-     * Reports wether this edge is part of a roundabout.
+     * Reports whether this edge is part of a roundabout.
      */
     static final int K_ROUNDABOUT = 2;
 
@@ -105,8 +111,8 @@ public interface FlagEncoder extends TurnCostEncoder
     long setLong( long flags, int key, long value );
 
     /**
-     * Returns arbitrary long value identified by the specified key. E.g. can be used to return the
-     * maximum width or height allowed for an edge.
+     * Returns arbitrary double value identified by the specified key. E.g. can be used to return
+     * the maximum width or height allowed for an edge.
      */
     double getDouble( long flags, int key );
 
@@ -121,4 +127,9 @@ public interface FlagEncoder extends TurnCostEncoder
      * @return additional cost or warning information for an instruction like ferry or road charges.
      */
     InstructionAnnotation getAnnotation( long flags, Translation tr );
+
+    /**
+     * @return true if already registered in an EncodingManager
+     */
+    boolean isRegistered();
 }

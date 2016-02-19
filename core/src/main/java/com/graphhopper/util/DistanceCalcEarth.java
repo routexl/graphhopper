@@ -19,6 +19,7 @@ package com.graphhopper.util;
 
 import com.graphhopper.util.shapes.BBox;
 import com.graphhopper.util.shapes.GHPoint;
+
 import static java.lang.Math.*;
 
 /**
@@ -42,17 +43,14 @@ public class DistanceCalcEarth implements DistanceCalc
 
     /**
      * Calculates distance of (from, to) in meter.
-     * <p/>
+     * <p>
      * http://en.wikipedia.org/wiki/Haversine_formula a = sin²(Δlat/2) +
      * cos(lat1).cos(lat2).sin²(Δlong/2) c = 2.atan2(√a, √(1−a)) d = R.c
      */
     @Override
     public double calcDist( double fromLat, double fromLon, double toLat, double toLon )
     {
-        double sinDeltaLat = sin(toRadians(toLat - fromLat) / 2);
-        double sinDeltaLon = sin(toRadians(toLon - fromLon) / 2);
-        double normedDist = sinDeltaLat * sinDeltaLat
-                + sinDeltaLon * sinDeltaLon * cos(toRadians(fromLat)) * cos(toRadians(toLat));
+        double normedDist = calcNormalizedDist(fromLat, fromLon, toLat, toLon);
         return R * 2 * asin(sqrt(normedDist));
     }
 
@@ -88,12 +86,6 @@ public class DistanceCalcEarth implements DistanceCalc
         return 2 * PI * R * cos(toRadians(lat));
     }
 
-    public double calcSpatialKeyMaxDist( int bit )
-    {
-        bit = bit / 2 + 1;
-        return (int) C >> bit;
-    }
-
     public boolean isDateLineCrossOver( double lon1, double lon2 )
     {
         return abs(lon1 - lon2) > 180.0;
@@ -117,8 +109,8 @@ public class DistanceCalcEarth implements DistanceCalc
 
     @Override
     public double calcNormalizedEdgeDistance( double r_lat_deg, double r_lon_deg,
-            double a_lat_deg, double a_lon_deg,
-            double b_lat_deg, double b_lon_deg )
+                                              double a_lat_deg, double a_lon_deg,
+                                              double b_lat_deg, double b_lon_deg )
     {
         return calcNormalizedEdgeDistanceNew(r_lat_deg, r_lon_deg, a_lat_deg, a_lon_deg, b_lat_deg, b_lon_deg, false);
     }
@@ -130,10 +122,10 @@ public class DistanceCalcEarth implements DistanceCalc
      * segment a-b
      */
     public double calcNormalizedEdgeDistanceNew( double r_lat_deg, double r_lon_deg,
-            double a_lat_deg, double a_lon_deg,
-            double b_lat_deg, double b_lon_deg, boolean reduceToSegment )
+                                                 double a_lat_deg, double a_lon_deg,
+                                                 double b_lat_deg, double b_lon_deg, boolean reduceToSegment )
     {
-        double shrinkFactor = cos(toRadians((a_lat_deg + b_lat_deg) / 2));
+        double shrinkFactor = calcShrinkFactor(a_lat_deg, b_lat_deg);
 
         double a_lat = a_lat_deg;
         double a_lon = a_lon_deg * shrinkFactor;
@@ -172,12 +164,16 @@ public class DistanceCalcEarth implements DistanceCalc
         return calcNormalizedDist(c_lat, c_lon / shrinkFactor, r_lat_deg, r_lon_deg);
     }
 
+    private double calcShrinkFactor(double a_lat_deg, double b_lat_deg) {
+        return cos(toRadians((a_lat_deg + b_lat_deg) / 2));
+    }
+
     @Override
     public GHPoint calcCrossingPointToEdge( double r_lat_deg, double r_lon_deg,
-            double a_lat_deg, double a_lon_deg,
-            double b_lat_deg, double b_lon_deg )
+                                            double a_lat_deg, double a_lon_deg,
+                                            double b_lat_deg, double b_lon_deg )
     {
-        double shrinkFactor = cos(toRadians((a_lat_deg + b_lat_deg) / 2));
+        double shrinkFactor = calcShrinkFactor(a_lat_deg, b_lat_deg);
         double a_lat = a_lat_deg;
         double a_lon = a_lon_deg * shrinkFactor;
 
@@ -201,14 +197,6 @@ public class DistanceCalcEarth implements DistanceCalc
         double norm = delta_lon * delta_lon + delta_lat * delta_lat;
         double factor = ((r_lon - a_lon) * delta_lon + (r_lat - a_lat) * delta_lat) / norm;
 
-        if (false)
-        {
-            if (factor > 1)
-                factor = 1;
-            else if (factor < 0)
-                factor = 0;
-        }
-
         // x,y is projection of r onto segment a-b
         double c_lon = a_lon + factor * delta_lon;
         double c_lat = a_lat + factor * delta_lat;
@@ -217,10 +205,10 @@ public class DistanceCalcEarth implements DistanceCalc
 
     @Override
     public boolean validEdgeDistance( double r_lat_deg, double r_lon_deg,
-            double a_lat_deg, double a_lon_deg,
-            double b_lat_deg, double b_lon_deg )
+                                      double a_lat_deg, double a_lon_deg,
+                                      double b_lat_deg, double b_lon_deg )
     {
-        double shrinkFactor = cos(toRadians((a_lat_deg + b_lat_deg) / 2));
+        double shrinkFactor = calcShrinkFactor(a_lat_deg, b_lat_deg);
         double a_lat = a_lat_deg;
         double a_lon = a_lon_deg * shrinkFactor;
 

@@ -18,6 +18,7 @@
 package com.graphhopper.storage;
 
 import com.graphhopper.util.Helper;
+
 import java.io.File;
 import java.nio.ByteOrder;
 import java.util.Collection;
@@ -26,7 +27,7 @@ import java.util.Map;
 
 /**
  * Implements some common methods for the subclasses.
- * <p/>
+ * <p>
  * @author Peter Karich
  */
 public class GHDirectory implements Directory

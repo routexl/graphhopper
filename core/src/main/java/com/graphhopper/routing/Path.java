@@ -19,20 +19,22 @@ package com.graphhopper.routing;
 
 import com.graphhopper.routing.util.DefaultEdgeFilter;
 import com.graphhopper.routing.util.FlagEncoder;
-import com.graphhopper.storage.EdgeEntry;
+import com.graphhopper.storage.SPTEntry;
 import com.graphhopper.storage.Graph;
 import com.graphhopper.storage.NodeAccess;
 import com.graphhopper.util.*;
 import gnu.trove.list.TIntList;
 import gnu.trove.list.array.TIntArrayList;
+
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 /**
  * Stores the nodes for the found path of an algorithm. It additionally needs the edgeIds to make
  * edge determination faster and less complex as there could be several edges (u,v) especially for
  * graphs with shortcuts.
- * <p/>
+ * <p>
  * @author Peter Karich
  * @author Ottavio Campana
  * @author jan soe
@@ -40,14 +42,18 @@ import java.util.List;
 public class Path
 {
     private static final AngleCalc ac = new AngleCalc();
+    private List<String> description;
     protected Graph graph;
     private FlagEncoder encoder;
     protected double distance;
-    // we go upwards (via EdgeEntry.parent) from the goal node to the origin node
+    // we go upwards (via SPTEntry.parent) from the goal node to the origin node
     protected boolean reverseOrder = true;
     protected long time;
     private boolean found;
-    protected EdgeEntry edgeEntry;
+    /**
+     * Shortest path tree entry
+     */
+    protected SPTEntry sptEntry;
     final StopWatch extractSW = new StopWatch("extract");
     private int fromNode = -1;
     protected int endNode = -1;
@@ -72,12 +78,29 @@ public class Path
         this(p.graph, p.encoder);
         weight = p.weight;
         edgeIds = new TIntArrayList(p.edgeIds);
-        edgeEntry = p.edgeEntry;
+        sptEntry = p.sptEntry;
     }
 
-    public Path setEdgeEntry( EdgeEntry edgeEntry )
+    /**
+     * @return the description of this route alternative to make it meaningful for the user e.g. it
+     * displays one or two main roads of the route.
+     */
+    public List<String> getDescription()
     {
-        this.edgeEntry = edgeEntry;
+        if (description == null)
+            return Collections.emptyList();
+        return description;
+    }
+
+    public Path setDescription( List<String> description )
+    {
+        this.description = description;
+        return this;
+    }
+
+    public Path setSPTEntry( SPTEntry sptEntry )
+    {
+        this.sptEntry = sptEntry;
         return this;
     }
 
@@ -93,7 +116,7 @@ public class Path
     }
 
     /**
-     * We need to remember fromNode explicitely as its not saved in one edgeId of edgeIds.
+     * We need to remember fromNode explicitly as its not saved in one edgeId of edgeIds.
      */
     protected Path setFromNode( int from )
     {
@@ -142,15 +165,6 @@ public class Path
 
     /**
      * @return time in millis
-     * @deprecated use getTime instead
-     */
-    public long getMillis()
-    {
-        return time;
-    }
-
-    /**
-     * @return time in millis
      */
     public long getTime()
     {
@@ -172,7 +186,7 @@ public class Path
     }
 
     /**
-     * Extracts the Path from the shortest-path-tree determined by edgeEntry.
+     * Extracts the Path from the shortest-path-tree determined by sptEntry.
      */
     public Path extract()
     {
@@ -180,7 +194,7 @@ public class Path
             throw new IllegalStateException("Extract can only be called once");
 
         extractSW.start();
-        EdgeEntry goalEdge = edgeEntry;
+        SPTEntry goalEdge = sptEntry;
         setEndNode(goalEdge.adjNode);
         while (EdgeIterator.Edge.isValid(goalEdge.edge))
         {
@@ -192,6 +206,14 @@ public class Path
         reverseOrder();
         extractSW.stop();
         return setFound(true);
+    }
+
+    /**
+     * Yields the final edge of the path
+     */
+    public EdgeIteratorState getFinalEdge()
+    {
+        return graph.getEdgeIteratorState(edgeIds.get(edgeIds.size() - 1), endNode);
     }
 
     /**
@@ -212,7 +234,7 @@ public class Path
      */
     protected void processEdge( int edgeId, int adjNode )
     {
-        EdgeIteratorState iter = graph.getEdgeProps(edgeId, adjNode);
+        EdgeIteratorState iter = graph.getEdgeIteratorState(edgeId, adjNode);
         double dist = iter.getDistance();
         distance += dist;
         time += calcMillis(dist, iter.getFlags(), false);
@@ -261,14 +283,14 @@ public class Path
         int len = edgeIds.size();
         for (int i = 0; i < len; i++)
         {
-            EdgeIteratorState edgeBase = graph.getEdgeProps(edgeIds.get(i), tmpNode);
+            EdgeIteratorState edgeBase = graph.getEdgeIteratorState(edgeIds.get(i), tmpNode);
             if (edgeBase == null)
                 throw new IllegalStateException("Edge " + edgeIds.get(i) + " was empty when requested with node " + tmpNode
                         + ", array index:" + i + ", edges:" + edgeIds.size());
 
             tmpNode = edgeBase.getBaseNode();
             // more efficient swap, currently not implemented for virtual edges: visitor.next(edgeBase.detach(true), i);
-            edgeBase = graph.getEdgeProps(edgeBase.getEdge(), tmpNode);
+            edgeBase = graph.getEdgeIteratorState(edgeBase.getEdge(), tmpNode);
             visitor.next(edgeBase, i);
         }
     }
@@ -416,7 +438,7 @@ public class Path
                 double latitude, longitude;
 
                 PointList wayGeo = edge.fetchWayGeometry(3);
-                boolean isRoundabout = encoder.isBool(flags, encoder.K_ROUNDABOUT);
+                boolean isRoundabout = encoder.isBool(flags, FlagEncoder.K_ROUNDABOUT);
 
                 if (wayGeo.getSize() <= 2)
                 {
@@ -485,12 +507,12 @@ public class Path
                             ways.add(prevInstruction);
                         }
 
-                        // Add passed exits to instruction. A node is countet if there is at least one outgoing edge
+                        // Add passed exits to instruction. A node is counted if there is at least one outgoing edge
                         // out of the roundabout
                         EdgeIterator edgeIter = outEdgeExplorer.setBaseNode(adjNode);
                         while (edgeIter.next())
                         {
-                            if (!encoder.isBool(edgeIter.getFlags(), encoder.K_ROUNDABOUT))
+                            if (!encoder.isBool(edgeIter.getFlags(), FlagEncoder.K_ROUNDABOUT))
                             {
                                 ((RoundaboutInstruction) prevInstruction).increaseExitNumber();
                                 break;

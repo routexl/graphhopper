@@ -22,18 +22,22 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertTrue;
 
+import org.junit.Rule;
 import org.junit.Test;
 
 import com.graphhopper.reader.OSMRelation;
 import com.graphhopper.reader.OSMWay;
 import com.graphhopper.util.BitUtil;
+import org.junit.rules.ExpectedException;
 
 /**
- *
  * @author Peter Karich
  */
 public class EncodingManagerTest
 {
+    @Rule
+    public ExpectedException thrown = ExpectedException.none();
+
     @Test
     public void testCompatibility()
     {
@@ -66,6 +70,13 @@ public class EncodingManagerTest
     }
 
     @Test
+    public void testEncoderWithWrongVersionIsRejected()
+    {
+        thrown.expect(IllegalArgumentException.class);
+        EncodingManager manager = new EncodingManager("CAR|version=0");
+    }
+
+    @Test
     public void testWrongEncoders()
     {
         try
@@ -86,6 +97,53 @@ public class EncodingManagerTest
         {
             assertTrue(ex.getMessage(), ex.getMessage().startsWith("Encoders are requesting more than 32 bits of way flags. Decrease the"));
         }
+    }
+
+    @Test
+    public void testToDetailsStringIncludesEncoderVersionNumber()
+    {
+        FlagEncoder encoder = new AbstractFlagEncoder(1, 2.0, 3)
+        {
+            @Override
+            public int getVersion()
+            {
+                return 10;
+            }
+
+            @Override
+            public String toString()
+            {
+                return "newEncoder";
+            }
+
+            @Override
+            protected String getPropertiesString()
+            {
+                return "myProperties";
+            }
+
+            @Override
+            public long handleRelationTags( OSMRelation relation, long oldRelationFlags )
+            {
+                return 0;
+            }
+
+            @Override
+            public long acceptWay( OSMWay way )
+            {
+                return 0;
+            }
+
+            @Override
+            public long handleWayTags( OSMWay way, long allowed, long relationFlags )
+            {
+                return 0;
+            }
+        };
+
+        EncodingManager subject = new EncodingManager(encoder);
+
+        assertEquals("newEncoder|myProperties|version=10", subject.toDetailsString());
     }
 
     @Test
@@ -114,7 +172,7 @@ public class EncodingManagerTest
             }
 
             @Override
-            protected int handlePriority( OSMWay way, int priorityFromRelation )
+            protected int handlePriority( OSMWay way, double wayTypeSpeed, int priorityFromRelation )
             {
                 return priorityFromRelation;
             }

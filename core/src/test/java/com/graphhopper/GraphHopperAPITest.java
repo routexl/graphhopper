@@ -18,14 +18,13 @@
 package com.graphhopper;
 
 import com.graphhopper.routing.util.EncodingManager;
-import com.graphhopper.storage.GraphStorage;
-import com.graphhopper.storage.GraphBuilder;
-import com.graphhopper.storage.NodeAccess;
+import com.graphhopper.storage.*;
+import com.graphhopper.util.PointList;
 import org.junit.Test;
+
 import static org.junit.Assert.*;
 
 /**
- *
  * @author Peter Karich
  */
 public class GraphHopperAPITest
@@ -35,7 +34,7 @@ public class GraphHopperAPITest
     @Test
     public void testLoad()
     {
-        GraphStorage graph = new GraphBuilder(encodingManager).create();
+        GraphHopperStorage graph = new GraphBuilder(encodingManager).create();
         NodeAccess na = graph.getNodeAccess();
         na.setNode(0, 42, 10);
         na.setNode(1, 42.1, 10.1);
@@ -56,19 +55,22 @@ public class GraphHopperAPITest
                 loadGraph(graph);
         GHResponse rsp = instance.route(new GHRequest(42, 10.4, 42, 10));
         assertFalse(rsp.hasErrors());
-        assertEquals(80, rsp.getDistance(), 1e-6);
-        assertEquals(42, rsp.getPoints().getLatitude(0), 1e-5);
-        assertEquals(10.4, rsp.getPoints().getLongitude(0), 1e-5);
-        assertEquals(41.9, rsp.getPoints().getLatitude(1), 1e-5);
-        assertEquals(10.2, rsp.getPoints().getLongitude(1), 1e-5);
-        assertEquals(3, rsp.getPoints().getSize());
+        PathWrapper arsp = rsp.getBest();
+        assertEquals(80, arsp.getDistance(), 1e-6);
+        
+        PointList points = arsp.getPoints();
+        assertEquals(42, points.getLatitude(0), 1e-5);
+        assertEquals(10.4, points.getLongitude(0), 1e-5);
+        assertEquals(41.9, points.getLatitude(1), 1e-5);
+        assertEquals(10.2, points.getLongitude(1), 1e-5);
+        assertEquals(3, points.getSize());
         instance.close();
     }
 
     @Test
     public void testDisconnected179()
     {
-        GraphStorage graph = new GraphBuilder(encodingManager).create();
+        GraphHopperStorage graph = new GraphBuilder(encodingManager).create();
         NodeAccess na = graph.getNodeAccess();
         na.setNode(0, 42, 10);
         na.setNode(1, 42.1, 10.1);
@@ -88,7 +90,7 @@ public class GraphHopperAPITest
 
         try
         {
-            rsp.getPoints();
+            rsp.getBest().getPoints();
             assertTrue(false);
         } catch (Exception ex)
         {

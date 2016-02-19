@@ -17,12 +17,19 @@
  */
 package com.graphhopper.http;
 
+import com.graphhopper.PathWrapper;
 import com.graphhopper.GHRequest;
 import com.graphhopper.GHResponse;
 import com.graphhopper.GraphHopperAPI;
 import com.graphhopper.util.*;
 import com.graphhopper.util.shapes.GHPoint;
+import java.util.ArrayList;
+import java.util.HashSet;
+
 import java.util.List;
+import java.util.Map.Entry;
+import java.util.Set;
+
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.slf4j.Logger;
@@ -30,7 +37,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Main wrapper of the GraphHopper Directions API for a simple and efficient usage.
- * <p/>
+ * <p>
  * @author Peter Karich
  */
 public class GraphHopperWeb implements GraphHopperAPI
@@ -42,9 +49,28 @@ public class GraphHopperWeb implements GraphHopperAPI
     private boolean instructions = true;
     private boolean calcPoints = true;
     private boolean elevation = false;
+    private final Set<String> ignoreSet;
 
     public GraphHopperWeb()
     {
+        // some parameters are supported directly via Java API so ignore them when writing the getHints map
+        ignoreSet = new HashSet<String>();
+        ignoreSet.add("calc_points");
+        ignoreSet.add("calcpoints");
+        ignoreSet.add("instructions");
+        ignoreSet.add("elevation");
+        ignoreSet.add("key");
+
+        // some parameters are in the request:
+        ignoreSet.add("algorithm");
+        ignoreSet.add("locale");
+        ignoreSet.add("point");
+        ignoreSet.add("vehicle");
+
+        // some are special and need to be avoided
+        ignoreSet.add("points_encoded");
+        ignoreSet.add("pointsencoded");
+        ignoreSet.add("type");
     }
 
     public void setDownloader( Downloader downloader )
@@ -89,8 +115,6 @@ public class GraphHopperWeb implements GraphHopperAPI
     @Override
     public GHResponse route( GHRequest request )
     {
-        StopWatch sw = new StopWatch().start();
-        double took = 0;
         try
         {
             String places = "";
@@ -107,7 +131,6 @@ public class GraphHopperWeb implements GraphHopperAPI
                         + "Use calcPoints=false and instructions=false to disable point and instruction calculation");
 
             boolean tmpElevation = request.getHints().getBool("elevation", elevation);
-            String tmpKey = request.getHints().get("key", key);
 
             String url = routeServiceUrl
                     + "?"
@@ -116,63 +139,71 @@ public class GraphHopperWeb implements GraphHopperAPI
                     + "&instructions=" + tmpInstructions
                     + "&points_encoded=true"
                     + "&calc_points=" + tmpCalcPoints
-                    + "&algo=" + request.getAlgorithm()
+                    + "&algorithm=" + request.getAlgorithm()
                     + "&locale=" + request.getLocale().toString()
                     + "&elevation=" + tmpElevation;
 
             if (!request.getVehicle().isEmpty())
                 url += "&vehicle=" + request.getVehicle();
 
-            if (!tmpKey.isEmpty())
-                url += "&key=" + tmpKey;
+            if (!key.isEmpty())
+                url += "&key=" + key;
 
-            String str = downloader.downloadAsString(url);
+            for (Entry<String, String> entry : request.getHints().toMap().entrySet())
+            {
+                String urlKey = entry.getKey();
+                String urlValue = entry.getValue();
+
+                // use lower case conversion for check only!
+                if (ignoreSet.contains(urlKey.toLowerCase()))
+                    continue;
+
+                if (urlValue != null && !urlValue.isEmpty())
+                    url += "&" + WebHelper.encodeURL(urlKey) + "=" + WebHelper.encodeURL(urlValue);
+            }
+
+            String str = downloader.downloadAsString(url, true);
             JSONObject json = new JSONObject(str);
 
-            if (json.has("message"))
-                throw new RuntimeException(json.getString("message") + ", code:" + json.getInt("code"));
-
             GHResponse res = new GHResponse();
-
-            if (json.getJSONObject("info").has("errors"))
-            {
-                JSONArray errors = json.getJSONObject("info").getJSONArray("errors");
-                readErrors(res.getErrors(), errors);
+            res.addErrors(readErrors(json));
+            if (res.hasErrors())
                 return res;
 
-            } else
+            JSONArray paths = json.getJSONArray("paths");
+            for (int index = 0; index < paths.length(); index++)
             {
-                took = json.getJSONObject("info").getDouble("took");
-                JSONArray paths = json.getJSONArray("paths");
-                JSONObject firstPath = paths.getJSONObject(0);
-                readPath(res, firstPath, tmpCalcPoints, tmpInstructions, tmpElevation);
-                return res;
+                JSONObject path = paths.getJSONObject(index);
+                PathWrapper altRsp = createPathWrapper(path, tmpCalcPoints, tmpInstructions, tmpElevation);
+                res.add(altRsp);
             }
+            return res;
+
         } catch (Exception ex)
         {
             throw new RuntimeException("Problem while fetching path " + request.getPoints() + ": " + ex.getMessage(), ex);
-        } finally
-        {
-            logger.debug("Full request took:" + sw.stop().getSeconds() + ", API took:" + took);
         }
     }
 
-    public static void readPath( GHResponse res, JSONObject firstPath,
-            boolean tmpCalcPoints,
-            boolean tmpInstructions,
-            boolean tmpElevation )
+    public static PathWrapper createPathWrapper( JSONObject path,
+                                                 boolean tmpCalcPoints, boolean tmpInstructions, boolean tmpElevation )
     {
-        double distance = firstPath.getDouble("distance");
-        long time = firstPath.getLong("time");
+        PathWrapper altRsp = new PathWrapper();
+        altRsp.addErrors(readErrors(path));
+        if (altRsp.hasErrors())
+            return altRsp;
+
+        double distance = path.getDouble("distance");
+        long time = path.getLong("time");
         if (tmpCalcPoints)
         {
-            String pointStr = firstPath.getString("points");
+            String pointStr = path.getString("points");
             PointList pointList = WebHelper.decodePolyline(pointStr, 100, tmpElevation);
-            res.setPoints(pointList);
+            altRsp.setPoints(pointList);
 
             if (tmpInstructions)
             {
-                JSONArray instrArr = firstPath.getJSONArray("instructions");
+                JSONArray instrArr = path.getJSONArray("instructions");
 
                 InstructionList il = new InstructionList(null);
                 int viaCount = 1;
@@ -201,7 +232,22 @@ public class GraphHopperWeb implements GraphHopperAPI
                     Instruction instr;
                     if (sign == Instruction.USE_ROUNDABOUT || sign == Instruction.LEAVE_ROUNDABOUT)
                     {
-                        instr = new RoundaboutInstruction(sign, text, ia, instPL);
+                        RoundaboutInstruction ri = new RoundaboutInstruction(sign, text, ia, instPL);
+
+                        if (jsonObj.has("exit_number"))
+                        {
+                            ri.setExitNumber(jsonObj.getInt("exit_number"));
+                        }
+
+                        if (jsonObj.has("turn_angle"))
+                        {
+                            // TODO provide setTurnAngle setter
+                            double angle = jsonObj.getDouble("turn_angle");
+                            ri.setDirOfRotation(angle);
+                            ri.setRadian((angle < 0 ? -Math.PI : Math.PI) - angle);
+                        }
+
+                        instr = ri;
                     } else if (sign == Instruction.REACHED_VIA)
                     {
                         ViaInstruction tmpInstr = new ViaInstruction(text, ia, instPL);
@@ -223,43 +269,58 @@ public class GraphHopperWeb implements GraphHopperAPI
                     instr.setDistance(instDist).setTime(instTime);
                     il.add(instr);
                 }
-                res.setInstructions(il);
+                altRsp.setInstructions(il);
             }
         }
-        res.setDistance(distance).setTime(time);
+        altRsp.setDistance(distance).setTime(time);
+        return altRsp;
     }
 
-    public static void readErrors( List<Throwable> errors, JSONArray errorJson )
+    public static List<Throwable> readErrors( JSONObject json )
     {
+        List<Throwable> errors = new ArrayList<Throwable>();
+        JSONArray errorJson;
+
+        if (json.has("message"))
+        {
+            if (json.has("hints"))
+            {
+                errorJson = json.getJSONArray("hints");
+            } else
+            {
+                // should not happen
+                errors.add(new RuntimeException(json.getString("message")));
+                return errors;
+            }
+        } else
+            return errors;
+
         for (int i = 0; i < errorJson.length(); i++)
         {
             JSONObject error = errorJson.getJSONObject(i);
             String exClass = "";
             if (error.has("details"))
-            {
                 exClass = error.getString("details");
-            }
+
             String exMessage = error.getString("message");
 
             if (exClass.equals(UnsupportedOperationException.class.getName()))
-            {
                 errors.add(new UnsupportedOperationException(exMessage));
-            } else if (exClass.equals(IllegalStateException.class.getName()))
-            {
+            else if (exClass.equals(IllegalStateException.class.getName()))
                 errors.add(new IllegalStateException(exMessage));
-            } else if (exClass.equals(RuntimeException.class.getName()))
-            {
+            else if (exClass.equals(RuntimeException.class.getName()))
                 errors.add(new RuntimeException(exMessage));
-            } else if (exClass.equals(IllegalArgumentException.class.getName()))
-            {
+            else if (exClass.equals(IllegalArgumentException.class.getName()))
                 errors.add(new IllegalArgumentException(exMessage));
-            } else if (exClass.isEmpty())
-            {
-                errors.add(new Exception(exMessage));
-            } else
-            {
-                errors.add(new Exception(exClass + " " + exMessage));
-            }
+            else if (exClass.isEmpty())
+                errors.add(new RuntimeException(exMessage));
+            else
+                errors.add(new RuntimeException(exClass + " " + exMessage));
         }
+
+        if (json.has("message") && errors.isEmpty())
+            errors.add(new RuntimeException(json.getString("message")));
+
+        return errors;
     }
 }

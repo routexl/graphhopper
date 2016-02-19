@@ -24,7 +24,7 @@ import java.util.Collection;
  * Maintains a collection of DataAccess objects stored at the same location. One GraphStorage per
  * Directory as we need one to maintain one DataAccess object for nodes, edges and location2id
  * index.
- * <p/>
+ * <p>
  * @author Peter Karich
  */
 public interface Directory
@@ -51,6 +51,7 @@ public interface Directory
      * Renames the specified DataAccess object into one.
      */
     // DataAccess rename( DataAccess da, String newName );
+
     /**
      * Removes the specified object from the directory.
      */
