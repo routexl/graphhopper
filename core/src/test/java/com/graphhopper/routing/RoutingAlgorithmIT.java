@@ -17,17 +17,21 @@
  */
 package com.graphhopper.routing;
 
+import com.graphhopper.GraphHopper;
 import com.graphhopper.reader.PrinctonReader;
-import com.graphhopper.routing.ch.PrepareContractionHierarchies;
 import com.graphhopper.routing.util.EncodingManager;
 import com.graphhopper.routing.util.FlagEncoder;
+import com.graphhopper.routing.util.HintsMap;
 import com.graphhopper.routing.util.TestAlgoCollector.AlgoHelperEntry;
 import com.graphhopper.routing.util.TraversalMode;
-import com.graphhopper.routing.weighting.ShortestWeighting;
 import com.graphhopper.routing.weighting.Weighting;
-import com.graphhopper.storage.*;
+import com.graphhopper.storage.CHGraph;
+import com.graphhopper.storage.Directory;
+import com.graphhopper.storage.GraphBuilder;
+import com.graphhopper.storage.GraphHopperStorage;
 import com.graphhopper.storage.index.LocationIndex;
 import com.graphhopper.storage.index.LocationIndexTree;
+import com.graphhopper.util.Parameters;
 import com.graphhopper.util.StopWatch;
 import org.junit.Test;
 
@@ -43,51 +47,67 @@ import static org.junit.Assert.assertTrue;
 
 /**
  * Try algorithms, indices and graph storages with real data
- * <p>
  *
  * @author Peter Karich
  */
 public class RoutingAlgorithmIT {
-    public static List<AlgoHelperEntry> createAlgos(GraphHopperStorage ghStorage,
-                                                    LocationIndex idx, final FlagEncoder encoder, boolean withCh,
-                                                    final TraversalMode tMode, final Weighting weighting,
-                                                    final EncodingManager manager) {
-        List<AlgoHelperEntry> prepare = new ArrayList<AlgoHelperEntry>();
-        prepare.add(new AlgoHelperEntry(ghStorage, ghStorage, new AlgorithmOptions(ASTAR, encoder, weighting, tMode), idx));
+    public static List<AlgoHelperEntry> createAlgos(final GraphHopper hopper, final HintsMap hints, TraversalMode tMode) {
+        GraphHopperStorage ghStorage = hopper.getGraphHopperStorage();
+        LocationIndex idx = hopper.getLocationIndex();
+
+        String addStr = "";
+        if (tMode.isEdgeBased())
+            addStr = "turn|";
+
+        FlagEncoder encoder = hopper.getEncodingManager().getEncoder(hints.getVehicle());
+        Weighting weighting = hopper.createWeighting(hints, encoder, hopper.getGraphHopperStorage());
+
+        HintsMap defaultHints = new HintsMap().put(Parameters.CH.DISABLE, true)
+                .setVehicle(hints.getVehicle()).setWeighting(hints.getWeighting());
+
+        AlgorithmOptions defaultOpts = AlgorithmOptions.start(new AlgorithmOptions("", weighting, tMode)).hints(defaultHints).build();
+
+        List<AlgoHelperEntry> prepare = new ArrayList<>();
+        prepare.add(new AlgoHelperEntry(ghStorage, AlgorithmOptions.start(defaultOpts).algorithm(ASTAR).build(), idx, "astar|beeline|" + addStr + weighting));
         // later: include dijkstraOneToMany
-        prepare.add(new AlgoHelperEntry(ghStorage, ghStorage, new AlgorithmOptions(DIJKSTRA, encoder, weighting, tMode), idx));
+        prepare.add(new AlgoHelperEntry(ghStorage, AlgorithmOptions.start(defaultOpts).algorithm(DIJKSTRA).build(), idx, "dijkstra|" + addStr + weighting));
 
-        final AlgorithmOptions astarbiOpts = new AlgorithmOptions(ASTAR_BI, encoder, weighting, tMode);
+        AlgorithmOptions astarbiOpts = AlgorithmOptions.start(defaultOpts).algorithm(ASTAR_BI).build();
         astarbiOpts.getHints().put(ASTAR_BI + ".approximation", "BeelineSimplification");
-        final AlgorithmOptions dijkstrabiOpts = new AlgorithmOptions(DIJKSTRA_BI, encoder, weighting, tMode);
-        prepare.add(new AlgoHelperEntry(ghStorage, ghStorage, astarbiOpts, idx));
-        prepare.add(new AlgoHelperEntry(ghStorage, ghStorage, dijkstrabiOpts, idx));
+        AlgorithmOptions dijkstrabiOpts = AlgorithmOptions.start(defaultOpts).algorithm(DIJKSTRA_BI).build();
+        prepare.add(new AlgoHelperEntry(ghStorage, astarbiOpts, idx, "astarbi|beeline|" + addStr + weighting));
+        prepare.add(new AlgoHelperEntry(ghStorage, dijkstrabiOpts, idx, "dijkstrabi|" + addStr + weighting));
 
-        if (withCh) {
-            GraphHopperStorage storageCopy = new GraphBuilder(manager).
-                    set3D(ghStorage.getNodeAccess().is3D()).setCHGraph(weighting).
-                    create();
-            ghStorage.copyTo(storageCopy);
-            storageCopy.freeze();
-            final CHGraph graphCH = storageCopy.getGraph(CHGraph.class, weighting);
-            final PrepareContractionHierarchies prepareCH = new PrepareContractionHierarchies(
-                    new GHDirectory("", DAType.RAM_INT), storageCopy, graphCH, encoder, weighting, tMode);
-            prepareCH.doWork();
-            LocationIndex idxCH = new LocationIndexTree(storageCopy, new RAMDirectory()).prepareIndex();
-            prepare.add(new AlgoHelperEntry(graphCH, storageCopy, dijkstrabiOpts, idxCH) {
+        // add additional preparations if CH preparation are enabled
+        if (hopper.getCHFactoryDecorator().isEnabled()) {
+            final HintsMap chHints = new HintsMap(defaultHints).put(Parameters.CH.DISABLE, false);
+            Weighting pickedWeighting = null;
+            for (Weighting tmpWeighting : hopper.getCHFactoryDecorator().getWeightings()) {
+                if (tmpWeighting.equals(weighting)) {
+                    pickedWeighting = tmpWeighting;
+                    break;
+                }
+            }
+            if (pickedWeighting == null)
+                throw new IllegalStateException("Didn't find weighting " + hints.getWeighting() + " in " + hopper.getCHFactoryDecorator().getWeightings());
+
+            prepare.add(new AlgoHelperEntry(ghStorage.getGraph(CHGraph.class, pickedWeighting),
+                    AlgorithmOptions.start(dijkstrabiOpts).hints(chHints).build(), idx, "dijkstrabi|ch|prepare|" + hints.getWeighting()) {
                 @Override
-                public RoutingAlgorithm createAlgo(Graph qGraph) {
-                    return prepareCH.createAlgo(qGraph, dijkstrabiOpts);
+                public RoutingAlgorithmFactory createRoutingFactory() {
+                    return hopper.getAlgorithmFactory(chHints);
                 }
             });
 
-            prepare.add(new AlgoHelperEntry(graphCH, storageCopy, astarbiOpts, idxCH) {
+            prepare.add(new AlgoHelperEntry(ghStorage.getGraph(CHGraph.class, pickedWeighting),
+                    AlgorithmOptions.start(astarbiOpts).hints(chHints).build(), idx, "astarbi|ch|prepare|" + hints.getWeighting()) {
                 @Override
-                public RoutingAlgorithm createAlgo(Graph qGraph) {
-                    return prepareCH.createAlgo(qGraph, astarbiOpts);
+                public RoutingAlgorithmFactory createRoutingFactory() {
+                    return hopper.getAlgorithmFactory(chHints);
                 }
             });
         }
+
         return prepare;
     }
 
@@ -97,20 +117,32 @@ public class RoutingAlgorithmIT {
         int noJvmWarming = N / 4;
 
         Random rand = new Random(0);
-        EncodingManager eManager = new EncodingManager("car");
-        FlagEncoder encoder = eManager.getEncoder("car");
-        GraphHopperStorage graph = new GraphBuilder(eManager).create();
+        final EncodingManager eManager = new EncodingManager("car");
+        final GraphHopperStorage graph = new GraphBuilder(eManager).create();
 
         String bigFile = "10000EWD.txt.gz";
         new PrinctonReader(graph).setStream(new GZIPInputStream(PrinctonReader.class.getResourceAsStream(bigFile))).read();
-        Collection<AlgoHelperEntry> prepares = createAlgos(graph, null, encoder, false, TraversalMode.NODE_BASED,
-                new ShortestWeighting(encoder), eManager);
+        GraphHopper hopper = new GraphHopper() {
+            {
+                setCHEnabled(false);
+                setEncodingManager(eManager);
+                loadGraph(graph);
+            }
+
+            @Override
+            protected LocationIndex createLocationIndex(Directory dir) {
+                return new LocationIndexTree(graph, dir);
+            }
+        };
+
+        Collection<AlgoHelperEntry> prepares = createAlgos(hopper, new HintsMap().setWeighting("shortest").setVehicle("car"), TraversalMode.NODE_BASED);
+
         for (AlgoHelperEntry entry : prepares) {
             StopWatch sw = new StopWatch();
             for (int i = 0; i < N; i++) {
                 int node1 = Math.abs(rand.nextInt(graph.getNodes()));
                 int node2 = Math.abs(rand.nextInt(graph.getNodes()));
-                RoutingAlgorithm d = entry.createAlgo(graph);
+                RoutingAlgorithm d = entry.createRoutingFactory().createAlgo(graph, entry.getAlgorithmOptions());
                 if (i >= noJvmWarming)
                     sw.start();
 

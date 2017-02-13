@@ -17,7 +17,8 @@
  */
 package com.graphhopper.routing;
 
-import com.graphhopper.routing.util.FlagEncoder;
+import com.carrotsearch.hppc.IntObjectMap;
+import com.graphhopper.coll.GHIntObjectHashMap;
 import com.graphhopper.routing.util.TraversalMode;
 import com.graphhopper.routing.weighting.BeelineWeightApproximator;
 import com.graphhopper.routing.weighting.WeightApproximator;
@@ -27,9 +28,8 @@ import com.graphhopper.storage.SPTEntry;
 import com.graphhopper.util.DistancePlaneProjection;
 import com.graphhopper.util.EdgeExplorer;
 import com.graphhopper.util.EdgeIterator;
+import com.graphhopper.util.Helper;
 import com.graphhopper.util.Parameters;
-import gnu.trove.map.TIntObjectMap;
-import gnu.trove.map.hash.TIntObjectHashMap;
 
 import java.util.PriorityQueue;
 
@@ -45,17 +45,17 @@ import java.util.PriorityQueue;
 public class AStar extends AbstractRoutingAlgorithm {
     private WeightApproximator weightApprox;
     private int visitedCount;
-    private TIntObjectMap<AStarEntry> fromMap;
+    private IntObjectMap<AStarEntry> fromMap;
     private PriorityQueue<AStarEntry> prioQueueOpenSet;
     private AStarEntry currEdge;
     private int to1 = -1;
 
-    public AStar(Graph graph, FlagEncoder encoder, Weighting weighting, TraversalMode tMode) {
-        super(graph, encoder, weighting, tMode);
+    public AStar(Graph graph, Weighting weighting, TraversalMode tMode) {
+        super(graph, weighting, tMode);
         int size = Math.min(Math.max(200, graph.getNodes() / 10), 2000);
         initCollections(size);
         BeelineWeightApproximator defaultApprox = new BeelineWeightApproximator(nodeAccess, weighting);
-        defaultApprox.setDistanceCalc(new DistancePlaneProjection());
+        defaultApprox.setDistanceCalc(Helper.DIST_PLANE);
         setApproximation(defaultApprox);
     }
 
@@ -68,7 +68,7 @@ public class AStar extends AbstractRoutingAlgorithm {
     }
 
     protected void initCollections(int size) {
-        fromMap = new TIntObjectHashMap<AStarEntry>();
+        fromMap = new GHIntObjectHashMap<AStarEntry>();
         prioQueueOpenSet = new PriorityQueue<AStarEntry>(size);
     }
 
@@ -147,7 +147,8 @@ public class AStar extends AbstractRoutingAlgorithm {
 
     @Override
     protected Path extractPath() {
-        return new Path(graph, flagEncoder).setWeight(currEdge.weight).setSPTEntry(currEdge).extract();
+        return new Path(graph, weighting).
+                setWeight(currEdge.weight).setSPTEntry(currEdge).extract();
     }
 
     @Override
@@ -167,7 +168,7 @@ public class AStar extends AbstractRoutingAlgorithm {
 
     @Override
     public String getName() {
-        return Parameters.Algorithms.ASTAR;
+        return Parameters.Algorithms.ASTAR + "|" + weightApprox;
     }
 
     public static class AStarEntry extends SPTEntry {

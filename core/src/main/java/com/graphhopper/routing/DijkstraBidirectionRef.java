@@ -17,14 +17,13 @@
  */
 package com.graphhopper.routing;
 
-import com.graphhopper.routing.util.FlagEncoder;
+import com.carrotsearch.hppc.IntObjectMap;
+import com.graphhopper.coll.GHIntObjectHashMap;
 import com.graphhopper.routing.util.TraversalMode;
 import com.graphhopper.routing.weighting.Weighting;
 import com.graphhopper.storage.Graph;
 import com.graphhopper.storage.SPTEntry;
 import com.graphhopper.util.*;
-import gnu.trove.map.TIntObjectMap;
-import gnu.trove.map.hash.TIntObjectHashMap;
 
 import java.util.PriorityQueue;
 
@@ -37,9 +36,9 @@ import java.util.PriorityQueue;
  * @author Peter Karich
  */
 public class DijkstraBidirectionRef extends AbstractBidirAlgo {
-    protected TIntObjectMap<SPTEntry> bestWeightMapFrom;
-    protected TIntObjectMap<SPTEntry> bestWeightMapTo;
-    protected TIntObjectMap<SPTEntry> bestWeightMapOther;
+    protected IntObjectMap<SPTEntry> bestWeightMapFrom;
+    protected IntObjectMap<SPTEntry> bestWeightMapTo;
+    protected IntObjectMap<SPTEntry> bestWeightMapOther;
     protected SPTEntry currFrom;
     protected SPTEntry currTo;
     protected PathBidirRef bestPath;
@@ -47,18 +46,18 @@ public class DijkstraBidirectionRef extends AbstractBidirAlgo {
     private PriorityQueue<SPTEntry> openSetTo;
     private boolean updateBestPath = true;
 
-    public DijkstraBidirectionRef(Graph graph, FlagEncoder encoder, Weighting weighting, TraversalMode tMode) {
-        super(graph, encoder, weighting, tMode);
-        int size = Math.min(Math.max(200, graph.getNodes() / 10), 2000);
+    public DijkstraBidirectionRef(Graph graph, Weighting weighting, TraversalMode tMode) {
+        super(graph, weighting, tMode);
+        int size = Math.min(Math.max(200, graph.getNodes() / 10), 150_000);
         initCollections(size);
     }
 
     protected void initCollections(int size) {
         openSetFrom = new PriorityQueue<SPTEntry>(size);
-        bestWeightMapFrom = new TIntObjectHashMap<SPTEntry>(size);
+        bestWeightMapFrom = new GHIntObjectHashMap<SPTEntry>(size);
 
-        openSetTo = new PriorityQueue<SPTEntry>(size / 10);
-        bestWeightMapTo = new TIntObjectHashMap<SPTEntry>(size);
+        openSetTo = new PriorityQueue<SPTEntry>(size);
+        bestWeightMapTo = new GHIntObjectHashMap<SPTEntry>(size);
     }
 
     @Override
@@ -101,7 +100,7 @@ public class DijkstraBidirectionRef extends AbstractBidirAlgo {
 
     @Override
     protected Path createAndInitPath() {
-        bestPath = new PathBidirRef(graph, flagEncoder);
+        bestPath = new PathBidirRef(graph, weighting);
         return bestPath;
     }
 
@@ -159,7 +158,7 @@ public class DijkstraBidirectionRef extends AbstractBidirAlgo {
     }
 
     void fillEdges(SPTEntry currEdge, PriorityQueue<SPTEntry> prioQueue,
-                   TIntObjectMap<SPTEntry> shortestWeightMap, EdgeExplorer explorer, boolean reverse) {
+                   IntObjectMap<SPTEntry> shortestWeightMap, EdgeExplorer explorer, boolean reverse) {
         EdgeIterator iter = explorer.setBaseNode(currEdge.adjNode);
         while (iter.next()) {
             if (!accept(iter, currEdge.edge))
@@ -221,15 +220,15 @@ public class DijkstraBidirectionRef extends AbstractBidirAlgo {
         }
     }
 
-    TIntObjectMap<SPTEntry> getBestFromMap() {
+    IntObjectMap<SPTEntry> getBestFromMap() {
         return bestWeightMapFrom;
     }
 
-    TIntObjectMap<SPTEntry> getBestToMap() {
+    IntObjectMap<SPTEntry> getBestToMap() {
         return bestWeightMapTo;
     }
 
-    void setBestOtherMap(TIntObjectMap<SPTEntry> other) {
+    void setBestOtherMap(IntObjectMap<SPTEntry> other) {
         bestWeightMapOther = other;
     }
 

@@ -17,7 +17,8 @@
  */
 package com.graphhopper.routing;
 
-import com.graphhopper.routing.util.FlagEncoder;
+import com.carrotsearch.hppc.IntObjectMap;
+import com.graphhopper.coll.GHIntObjectHashMap;
 import com.graphhopper.routing.util.TraversalMode;
 import com.graphhopper.routing.weighting.Weighting;
 import com.graphhopper.storage.Graph;
@@ -25,8 +26,6 @@ import com.graphhopper.storage.SPTEntry;
 import com.graphhopper.util.EdgeExplorer;
 import com.graphhopper.util.EdgeIterator;
 import com.graphhopper.util.Parameters;
-import gnu.trove.map.TIntObjectMap;
-import gnu.trove.map.hash.TIntObjectHashMap;
 
 import java.util.PriorityQueue;
 
@@ -38,21 +37,21 @@ import java.util.PriorityQueue;
  * @author Peter Karich
  */
 public class Dijkstra extends AbstractRoutingAlgorithm {
-    protected TIntObjectMap<SPTEntry> fromMap;
+    protected IntObjectMap<SPTEntry> fromMap;
     protected PriorityQueue<SPTEntry> fromHeap;
     protected SPTEntry currEdge;
     private int visitedNodes;
     private int to = -1;
 
-    public Dijkstra(Graph graph, FlagEncoder encoder, Weighting weighting, TraversalMode tMode) {
-        super(graph, encoder, weighting, tMode);
+    public Dijkstra(Graph graph, Weighting weighting, TraversalMode tMode) {
+        super(graph, weighting, tMode);
         int size = Math.min(Math.max(200, graph.getNodes() / 10), 2000);
         initCollections(size);
     }
 
     protected void initCollections(int size) {
         fromHeap = new PriorityQueue<SPTEntry>(size);
-        fromMap = new TIntObjectHashMap<SPTEntry>(size);
+        fromMap = new GHIntObjectHashMap<SPTEntry>(size);
     }
 
     @Override
@@ -122,7 +121,8 @@ public class Dijkstra extends AbstractRoutingAlgorithm {
         if (currEdge == null || !finished())
             return createEmptyPath();
 
-        return new Path(graph, flagEncoder).setWeight(currEdge.weight).setSPTEntry(currEdge).extract();
+        return new Path(graph, weighting).
+                setWeight(currEdge.weight).setSPTEntry(currEdge).extract();
     }
 
     @Override

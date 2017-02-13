@@ -17,6 +17,7 @@
  */
 package com.graphhopper.reader.osm;
 
+import com.carrotsearch.hppc.IntArrayList;
 import com.graphhopper.GHRequest;
 import com.graphhopper.GHResponse;
 import com.graphhopper.GraphHopper;
@@ -225,6 +226,7 @@ public class GraphHopperOSMTest {
                     latch2.countDown();
                     latch1.await(3, TimeUnit.SECONDS);
                 } catch (InterruptedException ex) {
+                    throw new RuntimeException(ex);
                 }
                 return super.importData();
             }
@@ -615,7 +617,7 @@ public class GraphHopperOSMTest {
         GHResponse response = new GHResponse();
         List<Path> paths = instance.calcPaths(req, response);
         assertFalse(response.hasErrors());
-        assertArrayEquals(new int[]{10, 5, 6, 7, 11}, paths.get(0).calcNodes().toArray());
+        assertEquals(IntArrayList.from(9, 5, 6, 7, 11), paths.get(0).calcNodes());
     }
 
     @Test
@@ -635,8 +637,8 @@ public class GraphHopperOSMTest {
         List<Path> paths = instance.calcPaths(req, response);
         assertFalse(response.hasErrors());
         assertEquals(1, response.getAll().size());
-        assertArrayEquals(new int[]{10, 4, 3, 11}, paths.get(0).calcNodes().toArray());
-        assertArrayEquals(new int[]{11, 8, 1, 2, 9}, paths.get(1).calcNodes().toArray());
+        assertEquals(IntArrayList.from(9, 4, 3, 10), paths.get(0).calcNodes());
+        assertEquals(IntArrayList.from(10, 8, 1, 2, 11), paths.get(1).calcNodes());
     }
 
     @Test
@@ -655,8 +657,8 @@ public class GraphHopperOSMTest {
         GHResponse response = new GHResponse();
         List<Path> paths = instance.calcPaths(req, response);
         assertFalse(response.hasErrors());
-        assertArrayEquals(new int[]{10, 4, 3, 8, 7, 9}, paths.get(0).calcNodes().toArray());
-        assertArrayEquals(new int[]{9, 6, 5, 10, 4, 3, 11}, paths.get(1).calcNodes().toArray());
+        assertEquals(IntArrayList.from(9, 4, 3, 8, 7, 11), paths.get(0).calcNodes());
+        assertEquals(IntArrayList.from(11, 6, 5, 9, 4, 3, 10), paths.get(1).calcNodes());
     }
 
     @Test
@@ -825,14 +827,14 @@ public class GraphHopperOSMTest {
         // use simple truck first
         EncodingManager em = new EncodingManager(simpleTruck, truck);
         CHAlgoFactoryDecorator decorator = new CHAlgoFactoryDecorator();
-        Weighting fwSimpleT = new FastestWeighting(simpleTruck);
-        Weighting fwT = new FastestWeighting(truck);
+        Weighting fwSimpleTruck = new FastestWeighting(simpleTruck);
+        Weighting fwTruck = new FastestWeighting(truck);
         RAMDirectory ramDir = new RAMDirectory();
-        GraphHopperStorage storage = new GraphHopperStorage(Arrays.asList(fwSimpleT, fwT), ramDir, em, false, new GraphExtension.NoOpExtension());
-        decorator.addWeighting(fwSimpleT);
-        decorator.addWeighting(fwT);
-        decorator.addPreparation(new PrepareContractionHierarchies(ramDir, storage, storage.getGraph(CHGraph.class, fwSimpleT), simpleTruck, fwSimpleT, TraversalMode.NODE_BASED));
-        decorator.addPreparation(new PrepareContractionHierarchies(ramDir, storage, storage.getGraph(CHGraph.class, fwT), truck, fwT, TraversalMode.NODE_BASED));
+        GraphHopperStorage storage = new GraphHopperStorage(Arrays.asList(fwSimpleTruck, fwTruck), ramDir, em, false, new GraphExtension.NoOpExtension());
+        decorator.addWeighting(fwSimpleTruck);
+        decorator.addWeighting(fwTruck);
+        decorator.addPreparation(new PrepareContractionHierarchies(ramDir, storage, storage.getGraph(CHGraph.class, fwSimpleTruck), fwSimpleTruck, TraversalMode.NODE_BASED));
+        decorator.addPreparation(new PrepareContractionHierarchies(ramDir, storage, storage.getGraph(CHGraph.class, fwTruck), fwTruck, TraversalMode.NODE_BASED));
 
         HintsMap wMap = new HintsMap("fastest");
         wMap.put("vehicle", "truck");
@@ -841,10 +843,10 @@ public class GraphHopperOSMTest {
         assertEquals("fastest|simple_truck", ((PrepareContractionHierarchies) decorator.getDecoratedAlgorithmFactory(null, wMap)).getWeighting().toString());
 
         // make sure weighting cannot be mixed
-        decorator.addWeighting(fwT);
-        decorator.addWeighting(fwSimpleT);
+        decorator.addWeighting(fwTruck);
+        decorator.addWeighting(fwSimpleTruck);
         try {
-            decorator.addPreparation(new PrepareContractionHierarchies(ramDir, storage, storage.getGraph(CHGraph.class, fwSimpleT), simpleTruck, fwSimpleT, TraversalMode.NODE_BASED));
+            decorator.addPreparation(new PrepareContractionHierarchies(ramDir, storage, storage.getGraph(CHGraph.class, fwSimpleTruck), fwSimpleTruck, TraversalMode.NODE_BASED));
             assertTrue(false);
         } catch (Exception ex) {
         }

@@ -17,6 +17,8 @@
  */
 package com.graphhopper.http;
 
+import com.graphhopper.GHRequest;
+import com.graphhopper.routing.util.HintsMap;
 import org.json.JSONException;
 import org.json.JSONObject;
 import org.slf4j.Logger;
@@ -31,6 +33,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 import static javax.servlet.http.HttpServletResponse.SC_BAD_REQUEST;
 import static javax.servlet.http.HttpServletResponse.SC_OK;
@@ -64,14 +67,14 @@ public class GHBaseServlet extends HttpServlet {
             if (debug)
                 writeResponse(res, callbackName + "(" + json.toString(2) + ")");
             else
-                writeResponse(res, callbackName + "(" + json.toString() + ")");
+                writeResponse(res, callbackName + "(" + json.toString(0) + ")");
 
         } else {
             res.setContentType("application/json");
             if (debug)
                 writeResponse(res, json.toString(2));
             else
-                writeResponse(res, json.toString());
+                writeResponse(res, json.toString(0));
         }
     }
 
@@ -90,7 +93,7 @@ public class GHBaseServlet extends HttpServlet {
             res.setStatus(code);
             res.getWriter().append(json.toString(2));
         } catch (IOException ex) {
-            logger.error("Cannot write error " + ex.getMessage());
+            throw new RuntimeException("Cannot write JSON Error " + code, ex);
         }
     }
 
@@ -160,6 +163,13 @@ public class GHBaseServlet extends HttpServlet {
             res.getWriter().append(str);
         } catch (IOException ex) {
             logger.error("Cannot write message:" + str, ex);
+        }
+    }
+
+    protected void initHints(HintsMap m, Map<String, String[]> parameterMap) {
+        for (Map.Entry<String, String[]> e : parameterMap.entrySet()) {
+            if (e.getValue().length == 1)
+                m.put(e.getKey(), e.getValue()[0]);
         }
     }
 }

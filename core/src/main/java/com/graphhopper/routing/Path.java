@@ -17,14 +17,16 @@
  */
 package com.graphhopper.routing;
 
+import com.carrotsearch.hppc.IntArrayList;
+import com.carrotsearch.hppc.IntIndexedContainer;
+import com.graphhopper.coll.GHIntArrayList;
 import com.graphhopper.routing.util.DefaultEdgeFilter;
 import com.graphhopper.routing.util.FlagEncoder;
+import com.graphhopper.routing.weighting.Weighting;
 import com.graphhopper.storage.Graph;
 import com.graphhopper.storage.NodeAccess;
 import com.graphhopper.storage.SPTEntry;
 import com.graphhopper.util.*;
-import gnu.trove.list.TIntList;
-import gnu.trove.list.array.TIntArrayList;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -54,28 +56,30 @@ public class Path {
     protected SPTEntry sptEntry;
     protected int endNode = -1;
     private List<String> description;
+    protected Weighting weighting;
     private FlagEncoder encoder;
     private boolean found;
     private int fromNode = -1;
-    private TIntList edgeIds;
+    private GHIntArrayList edgeIds;
     private double weight;
     private NodeAccess nodeAccess;
 
-    public Path(Graph graph, FlagEncoder encoder) {
+    public Path(Graph graph, Weighting weighting) {
         this.weight = Double.MAX_VALUE;
         this.graph = graph;
         this.nodeAccess = graph.getNodeAccess();
-        this.encoder = encoder;
-        this.edgeIds = new TIntArrayList();
+        this.weighting = weighting;
+        this.encoder = weighting.getFlagEncoder();
+        this.edgeIds = new GHIntArrayList();
     }
 
     /**
      * Populates an unextracted path instances from the specified path p.
      */
     Path(Path p) {
-        this(p.graph, p.encoder);
+        this(p.graph, p.weighting);
         weight = p.weight;
-        edgeIds = new TIntArrayList(p.edgeIds);
+        edgeIds = new GHIntArrayList(p.edgeIds);
         sptEntry = p.sptEntry;
     }
 
@@ -147,6 +151,11 @@ public class Path {
         edgeIds.reverse();
     }
 
+    public Path setDistance(double distance) {
+        this.distance = distance;
+        return this;
+    }
+
     /**
      * @return distance in meter
      */
@@ -182,9 +191,11 @@ public class Path {
 
         extractSW.start();
         SPTEntry goalEdge = sptEntry;
+        int prevEdge = EdgeIterator.NO_EDGE;
         setEndNode(goalEdge.adjNode);
         while (EdgeIterator.Edge.isValid(goalEdge.edge)) {
-            processEdge(goalEdge.edge, goalEdge.adjNode);
+            processEdge(goalEdge.edge, goalEdge.adjNode, prevEdge);
+            prevEdge = goalEdge.edge;
             goalEdge = goalEdge.parent;
         }
 
@@ -215,33 +226,21 @@ public class Path {
     /**
      * Calls getDistance and adds the edgeId.
      */
-    protected void processEdge(int edgeId, int adjNode) {
+    protected void processEdge(int edgeId, int adjNode, int prevEdgeId) {
         EdgeIteratorState iter = graph.getEdgeIteratorState(edgeId, adjNode);
-        double dist = iter.getDistance();
-        distance += dist;
-        // TODO calculate time based on weighting -> weighting.calcMillis
-        time += calcMillis(dist, iter.getFlags(), false);
+        distance += iter.getDistance();
+        time += weighting.calcMillis(iter, false, prevEdgeId);
         addEdge(edgeId);
     }
 
     /**
      * Calculates the time in millis for the specified distance in meter and speed (in km/h) via
      * flags.
+     *
+     * @deprecated use Weighting
      */
-    protected long calcMillis(double distance, long flags, boolean revert) {
-        if (revert && !encoder.isBackward(flags)
-                || !revert && !encoder.isForward(flags))
-            throw new IllegalStateException("Calculating time should not require to read speed from edge in wrong direction. "
-                    + "Reverse:" + revert + ", fwd:" + encoder.isForward(flags) + ", bwd:" + encoder.isBackward(flags));
-
-        double speed = revert ? encoder.getReverseSpeed(flags) : encoder.getSpeed(flags);
-        if (Double.isInfinite(speed) || Double.isNaN(speed) || speed < 0)
-            throw new IllegalStateException("Invalid speed stored in edge! " + speed);
-
-        if (speed == 0)
-            throw new IllegalStateException("Speed cannot be 0 for unblocked edge, use access properties to mark edge blocked! Should only occur for shortest path calculation. See #242.");
-
-        return (long) (distance * 3600 / speed);
+    protected long calcMillis(EdgeIteratorState edge, boolean reverse) {
+        return weighting.calcMillis(edge, reverse, EdgeIterator.NO_EDGE);
     }
 
     /**
@@ -288,8 +287,8 @@ public class Path {
     /**
      * @return the uncached node indices of the tower nodes in this path.
      */
-    public TIntList calcNodes() {
-        final TIntArrayList nodes = new TIntArrayList(edgeIds.size() + 1);
+    public IntIndexedContainer calcNodes() {
+        final IntArrayList nodes = new IntArrayList(edgeIds.size() + 1);
         if (edgeIds.isEmpty()) {
             if (isFound()) {
                 nodes.add(endNode);
@@ -401,8 +400,8 @@ public class Path {
                 } else {
                     latitude = wayGeo.getLatitude(1);
                     longitude = wayGeo.getLongitude(1);
-                    assert java.lang.Double.compare(prevLat, nodeAccess.getLatitude(baseNode)) == 0;
-                    assert java.lang.Double.compare(prevLon, nodeAccess.getLongitude(baseNode)) == 0;
+                    assert Double.compare(prevLat, nodeAccess.getLatitude(baseNode)) == 0;
+                    assert Double.compare(prevLon, nodeAccess.getLongitude(baseNode)) == 0;
                 }
 
                 name = edge.getName();
@@ -562,8 +561,8 @@ public class Path {
                 }
                 double newDist = edge.getDistance();
                 prevInstruction.setDistance(newDist + prevInstruction.getDistance());
-                long flags = edge.getFlags();
-                prevInstruction.setTime(calcMillis(newDist, flags, false) + prevInstruction.getTime());
+                prevInstruction.setTime(weighting.calcMillis(edge, false, EdgeIterator.NO_EDGE)
+                        + prevInstruction.getTime());
             }
         });
 

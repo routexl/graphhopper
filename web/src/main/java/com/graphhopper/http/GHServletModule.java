@@ -47,6 +47,9 @@ public class GHServletModule extends ServletModule {
 
     @Override
     protected void configureServlets() {
+        filter("*").through(HeadFilter.class);
+        bind(HeadFilter.class).in(Singleton.class);
+
         filter("*").through(CORSFilter.class, params);
         bind(CORSFilter.class).in(Singleton.class);
 
@@ -64,5 +67,8 @@ public class GHServletModule extends ServletModule {
 
         serve("/nearest*").with(NearestServlet.class);
         bind(NearestServlet.class).in(Singleton.class);
+
+        serve("/change*").with(ChangeGraphServlet.class);
+        bind(ChangeGraphServlet.class).in(Singleton.class);
     }
 }

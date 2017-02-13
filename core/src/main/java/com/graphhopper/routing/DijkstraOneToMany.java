@@ -17,15 +17,14 @@
  */
 package com.graphhopper.routing;
 
-import com.graphhopper.coll.IntDoubleBinHeap;
-import com.graphhopper.routing.util.FlagEncoder;
+import com.carrotsearch.hppc.IntArrayList;
+import com.graphhopper.apache.commons.collections.IntDoubleBinaryHeap;
 import com.graphhopper.routing.util.TraversalMode;
 import com.graphhopper.routing.weighting.Weighting;
 import com.graphhopper.storage.Graph;
 import com.graphhopper.util.EdgeIterator;
 import com.graphhopper.util.Helper;
 import com.graphhopper.util.Parameters;
-import gnu.trove.list.array.TIntArrayList;
 
 import java.util.Arrays;
 
@@ -39,19 +38,19 @@ import java.util.Arrays;
 public class DijkstraOneToMany extends AbstractRoutingAlgorithm {
     private static final int EMPTY_PARENT = -1;
     private static final int NOT_FOUND = -1;
-    private final TIntArrayListWithCap changedNodes;
+    private final IntArrayListWithCap changedNodes;
     protected double[] weights;
     private int[] parents;
     private int[] edgeIds;
-    private IntDoubleBinHeap heap;
+    private IntDoubleBinaryHeap heap;
     private int visitedNodes;
     private boolean doClear = true;
     private int endNode;
     private int currNode, fromNode, to;
     private double weightLimit = Double.MAX_VALUE;
 
-    public DijkstraOneToMany(Graph graph, FlagEncoder encoder, Weighting weighting, TraversalMode tMode) {
-        super(graph, encoder, weighting, tMode);
+    public DijkstraOneToMany(Graph graph, Weighting weighting, TraversalMode tMode) {
+        super(graph, weighting, tMode);
 
         parents = new int[graph.getNodes()];
         Arrays.fill(parents, EMPTY_PARENT);
@@ -63,8 +62,8 @@ public class DijkstraOneToMany extends AbstractRoutingAlgorithm {
 
         Arrays.fill(weights, Double.MAX_VALUE);
 
-        heap = new IntDoubleBinHeap();
-        changedNodes = new TIntArrayListWithCap();
+        heap = new IntDoubleBinaryHeap(1000);
+        changedNodes = new IntArrayListWithCap();
     }
 
     @Override
@@ -76,7 +75,7 @@ public class DijkstraOneToMany extends AbstractRoutingAlgorithm {
 
     @Override
     public Path extractPath() {
-        PathNative p = new PathNative(graph, flagEncoder, parents, edgeIds);
+        PathNative p = new PathNative(graph, weighting, parents, edgeIds);
         if (endNode >= 0)
             p.setWeight(weights[endNode]);
         p.setFromNode(fromNode);
@@ -115,7 +114,9 @@ public class DijkstraOneToMany extends AbstractRoutingAlgorithm {
             }
 
             heap.clear();
-            changedNodes.reset();
+
+            // changedNodes.clear();
+            changedNodes.elementsCount = 0;
 
             currNode = from;
             if (!traversalMode.isEdgeBased()) {
@@ -227,12 +228,12 @@ public class DijkstraOneToMany extends AbstractRoutingAlgorithm {
                 + "MB";
     }
 
-    private static class TIntArrayListWithCap extends TIntArrayList {
-        public TIntArrayListWithCap() {
+    private static class IntArrayListWithCap extends IntArrayList {
+        public IntArrayListWithCap() {
         }
 
         public int getCapacity() {
-            return _data.length;
+            return buffer.length;
         }
     }
 }

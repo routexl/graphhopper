@@ -22,7 +22,6 @@ import com.graphhopper.GHResponse;
 import com.graphhopper.GraphHopper;
 import com.graphhopper.PathWrapper;
 import com.graphhopper.routing.util.FlagEncoder;
-import com.graphhopper.routing.util.HintsMap;
 import com.graphhopper.util.StopWatch;
 import com.graphhopper.util.shapes.GHPoint;
 import org.json.JSONObject;
@@ -42,8 +41,8 @@ import javax.xml.transform.stream.StreamResult;
 import java.io.IOException;
 import java.io.StringWriter;
 import java.util.*;
-import java.util.Map.Entry;
 
+import static com.graphhopper.util.Parameters.Routing.*;
 import static javax.servlet.http.HttpServletResponse.SC_BAD_REQUEST;
 
 /**
@@ -65,11 +64,10 @@ public class GraphHopperServlet extends GHBaseServlet {
         List<GHPoint> requestPoints = getPoints(httpReq, "point");
         GHResponse ghRsp = new GHResponse();
 
-        // we can reduce the path length based on the maximum differences to the original coordinates
-        double minPathPrecision = getDoubleParam(httpReq, "way_point_max_distance", 1d);
+        double minPathPrecision = getDoubleParam(httpReq, WAY_POINT_MAX_DISTANCE, 1d);
         boolean writeGPX = "gpx".equalsIgnoreCase(getParam(httpReq, "type", "json"));
-        boolean enableInstructions = writeGPX || getBooleanParam(httpReq, "instructions", true);
-        boolean calcPoints = getBooleanParam(httpReq, "calc_points", true);
+        boolean enableInstructions = writeGPX || getBooleanParam(httpReq, INSTRUCTIONS, true);
+        boolean calcPoints = getBooleanParam(httpReq, CALC_POINTS, true);
         boolean enableElevation = getBooleanParam(httpReq, "elevation", false);
         boolean pointsEncoded = getBooleanParam(httpReq, "points_encoded", true);
 
@@ -87,7 +85,7 @@ public class GraphHopperServlet extends GHBaseServlet {
                     favoredHeadings = getDoubleParamList(httpReq, "heading");
 
                 } catch (NumberFormatException e) {
-                    throw new IllegalArgumentException("heading list in from format: " + e.getMessage());
+                    throw new IllegalArgumentException("heading list in wrong format: " + e.getMessage());
                 }
 
                 if (!hopper.getEncodingManager().supports(vehicleStr)) {
@@ -97,6 +95,11 @@ public class GraphHopperServlet extends GHBaseServlet {
                 } else if (favoredHeadings.size() > 1 && favoredHeadings.size() != requestPoints.size()) {
                     throw new IllegalArgumentException("The number of 'heading' parameters must be <= 1 "
                             + "or equal to the number of points (" + requestPoints.size() + ")");
+                }
+
+                List<String> pointHints = new ArrayList<String>(Arrays.asList(getParams(httpReq, POINT_HINT)));
+                if (pointHints.size() > 0 && pointHints.size() != requestPoints.size()) {
+                    throw new IllegalArgumentException("If you pass " + POINT_HINT + ", you need to pass a hint for every point, empty hints will be ignored");
                 }
 
                 FlagEncoder algoVehicle = hopper.getEncodingManager().getEncoder(vehicleStr);
@@ -115,15 +118,16 @@ public class GraphHopperServlet extends GHBaseServlet {
                     request = new GHRequest(requestPoints);
                 }
 
-                initHints(request, httpReq.getParameterMap());
+                initHints(request.getHints(), httpReq.getParameterMap());
                 request.setVehicle(algoVehicle.toString()).
                         setWeighting(weighting).
                         setAlgorithm(algoStr).
                         setLocale(localeStr).
+                        setPointHints(pointHints).
                         getHints().
-                        put("calcPoints", calcPoints).
-                        put("instructions", enableInstructions).
-                        put("wayPointMaxDistance", minPathPrecision);
+                        put(CALC_POINTS, calcPoints).
+                        put(INSTRUCTIONS, enableInstructions).
+                        put(WAY_POINT_MAX_DISTANCE, minPathPrecision);
 
                 ghRsp = hopper.route(request);
             } catch (IllegalArgumentException ex) {
@@ -171,8 +175,9 @@ public class GraphHopperServlet extends GHBaseServlet {
 
             if (ghRsp.hasErrors())
                 writeJsonError(httpRes, SC_BAD_REQUEST, new JSONObject(map));
-            else
+            else {
                 writeJson(httpReq, httpRes, new JSONObject(map));
+            }
         }
     }
 
@@ -249,13 +254,5 @@ public class GraphHopperServlet extends GHBaseServlet {
         }
 
         return infoPoints;
-    }
-
-    protected void initHints(GHRequest request, Map<String, String[]> parameterMap) {
-        HintsMap m = request.getHints();
-        for (Entry<String, String[]> e : parameterMap.entrySet()) {
-            if (e.getValue().length == 1)
-                m.put(e.getKey(), e.getValue()[0]);
-        }
     }
 }

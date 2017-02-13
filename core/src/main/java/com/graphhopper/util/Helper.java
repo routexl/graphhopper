@@ -17,13 +17,17 @@
  */
 package com.graphhopper.util;
 
+import com.carrotsearch.hppc.IntArrayList;
+import com.carrotsearch.hppc.IntIndexedContainer;
 import com.graphhopper.util.shapes.BBox;
-import gnu.trove.list.TIntList;
-import gnu.trove.list.array.TIntArrayList;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.*;
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
@@ -61,7 +65,7 @@ public class Helper {
     private Helper() {
     }
 
-    public static ArrayList<Integer> tIntListToArrayList(TIntList from) {
+    public static ArrayList<Integer> intListToArrayList(IntIndexedContainer from) {
         int len = from.size();
         ArrayList<Integer> list = new ArrayList<Integer>(len);
         for (int i = 0; i < len; i++) {
@@ -88,11 +92,15 @@ public class Helper {
     }
 
     public static int countBitValue(int maxTurnCosts) {
-        double val = Math.log(maxTurnCosts) / Math.log(2);
-        int intVal = (int) val;
-        if (val == intVal)
-            return intVal;
-        return intVal + 1;
+        if (maxTurnCosts < 0)
+            throw new IllegalArgumentException("maxTurnCosts cannot be negative " + maxTurnCosts);
+
+        int counter = 0;
+        while (maxTurnCosts > 0) {
+            maxTurnCosts >>= 1;
+            counter++;
+        }
+        return counter++;
     }
 
     public static void loadProperties(Map<String, String> map, Reader tmpReader) throws IOException {
@@ -279,12 +287,8 @@ public class Helper {
         return list;
     }
 
-    public static TIntList createTList(int... list) {
-        TIntList res = new TIntArrayList(list.length);
-        for (int val : list) {
-            res.add(val);
-        }
-        return res;
+    public static IntArrayList createTList(int... list) {
+        return IntArrayList.from(list);
     }
 
     public static PointList createPointList(double... list) {
@@ -314,7 +318,7 @@ public class Helper {
     /**
      * Converts into an integer to be compatible with the still limited DataAccess class (accepts
      * only integer values). But this conversion also reduces memory consumption where the precision
-     * loss is accceptable. As +- 180° and +-90° are assumed as maximum values.
+     * loss is acceptable. As +- 180° and +-90° are assumed as maximum values.
      * <p>
      *
      * @return the integer of the specified degree
@@ -361,24 +365,65 @@ public class Helper {
     }
 
     public static void cleanMappedByteBuffer(final ByteBuffer buffer) {
+        // TODO avoid reflection on every call
         try {
             AccessController.doPrivileged(new PrivilegedExceptionAction<Object>() {
                 @Override
                 public Object run() throws Exception {
+                    if (Constants.JAVA_VERSION.equals("9-ea")) {
+                        // >=JDK9 class sun.misc.Unsafe { void invokeCleaner(ByteBuffer buf) }
+                        final Class<?> unsafeClass = Class.forName("sun.misc.Unsafe");
+                        // we do not need to check for a specific class, we can call the Unsafe method with any buffer class
+                        MethodHandle unmapper = MethodHandles.lookup().findVirtual(unsafeClass, "invokeCleaner",
+                                MethodType.methodType(void.class, ByteBuffer.class));
+                        // fetch the unsafe instance and bind it to the virtual MethodHandle
+                        final Field f = unsafeClass.getDeclaredField("theUnsafe");
+                        f.setAccessible(true);
+                        final Object theUnsafe = f.get(null);
+                        try {
+                            unmapper.bindTo(theUnsafe).invokeExact(buffer);
+                            return null;
+                        } catch (Throwable t) {
+                            throw new RuntimeException(t);
+                        }
+                    }
+
+                    // <=JDK8 class DirectByteBuffer { sun.misc.Cleaner cleaner(Buffer buf) }
+                    //        then call sun.misc.Cleaner.clean
                     try {
-                        final Method getCleanerMethod = buffer.getClass().getMethod("cleaner");
-                        getCleanerMethod.setAccessible(true);
-                        final Object cleaner = getCleanerMethod.invoke(buffer);
-                        if (cleaner != null)
-                            cleaner.getClass().getMethod("clean").invoke(cleaner);
-                    } catch (NoSuchMethodException ex) {
-                        // ignore if method cleaner or clean is not available, like on Android
+                        if (buffer.getClass().getSimpleName().equals("MappedByteBufferAdapter")) {
+                            if (!Constants.ANDROID)
+                                throw new RuntimeException("MappedByteBufferAdapter only supported for Android at the moment");
+
+                            // Regarding MappedByteBufferAdapter on Android 4.1, see #914
+                            final Class<?> directByteBufferClass = Class.forName("java.nio.MappedByteBufferAdapter");
+                            final Method dbbFreeMethod = directByteBufferClass.getMethod("free");
+                            dbbFreeMethod.setAccessible(true);
+                            // call: ((MappedByteBufferAdapter)buffer).free()
+                            dbbFreeMethod.invoke(buffer);
+                        } else {
+                            final Class<?> directByteBufferClass = Class.forName("java.nio.DirectByteBuffer");
+                            final Method dbbCleanerMethod = directByteBufferClass.getMethod("cleaner");
+                            dbbCleanerMethod.setAccessible(true);
+                            // call: cleaner = ((DirectByteBuffer)buffer).cleaner()
+                            final Object cleaner = dbbCleanerMethod.invoke(buffer);
+                            if (cleaner != null) {
+                                final Class<?> cleanerMethodReturnType = dbbCleanerMethod.getReturnType();
+                                final Method cleanMethod = cleanerMethodReturnType.getDeclaredMethod("clean");
+                                cleanMethod.setAccessible(true);
+                                // call: ((sun.misc.Cleaner)cleaner).clean()
+                                cleanMethod.invoke(cleaner);
+                            }
+                        }
+                    } catch (NoSuchMethodException ex2) {
+                        // ignore if method cleaner or clean is not available
+                        LOGGER.warn("NoSuchMethodException | " + Constants.JAVA_VERSION, ex2);
                     }
                     return null;
                 }
             });
         } catch (PrivilegedActionException e) {
-            throw new RuntimeException("unable to unmap the mapped buffer", e);
+            throw new RuntimeException("Unable to unmap the mapped buffer", e);
         }
     }
 
@@ -392,7 +437,7 @@ public class Helper {
 
     public static String nf(long no) {
         // I like french localization the most: 123654 will be 123 654 instead
-        // of comma vs. point confusion for english/german guys.
+        // of comma vs. point confusion for English/German people.
         // NumberFormat is not thread safe => but getInstance looks like it's cached
         return NumberFormat.getInstance(Locale.FRANCE).format(no);
     }

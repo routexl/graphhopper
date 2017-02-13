@@ -19,6 +19,7 @@ package com.graphhopper.routing.weighting;
 
 import com.graphhopper.routing.util.FlagEncoder;
 import com.graphhopper.routing.util.HintsMap;
+import com.graphhopper.util.EdgeIteratorState;
 
 /**
  * The AdjustedWeighting wraps another Weighting.
@@ -34,8 +35,13 @@ public abstract class AbstractAdjustedWeighting implements Weighting {
         this.superWeighting = superWeighting;
     }
 
+    @Override
+    public long calcMillis(EdgeIteratorState edgeState, boolean reverse, int prevOrNextEdgeId) {
+        return superWeighting.calcMillis(edgeState, reverse, prevOrNextEdgeId);
+    }
+
     /**
-     * Returns the flagEncoder of the superWeighting. Usually we do not have a Flagencoder here.
+     * Returns the flagEncoder of the superWeighting. Usually we do not have a FlagEncoder here.
      */
     @Override
     public FlagEncoder getFlagEncoder() {

@@ -22,7 +22,10 @@ import com.graphhopper.reader.ReaderWay;
 import com.graphhopper.routing.weighting.GenericWeighting;
 import com.graphhopper.util.ConfigMap;
 import com.graphhopper.util.EdgeIteratorState;
+import com.graphhopper.util.Helper;
 import com.graphhopper.util.PMap;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.Map.Entry;
@@ -37,6 +40,9 @@ import java.util.Map.Entry;
  * @author Peter Karich
  */
 public class DataFlagEncoder extends AbstractFlagEncoder {
+
+    private static final Logger LOG = LoggerFactory.getLogger(DataFlagEncoder.class);
+
     private static final Map<String, Double> DEFAULT_SPEEDS = new LinkedHashMap<String, Double>() {
         {
             put("motorway", 100d);
@@ -61,6 +67,7 @@ public class DataFlagEncoder extends AbstractFlagEncoder {
     };
     private final Map<String, Integer> surfaceMap = new HashMap<>();
     private final Map<String, Integer> highwayMap = new HashMap<>();
+    private final Map<String, Integer> accessMap = new HashMap<>();
     private final List<String> transportModeList = new ArrayList<>();
     private final Map<String, Integer> transportModeMap = new HashMap<>();
     private final int transportModeTunnelValue;
@@ -68,28 +75,49 @@ public class DataFlagEncoder extends AbstractFlagEncoder {
     private long bit0;
     private EncodedDoubleValue carFwdMaxspeedEncoder;
     private EncodedDoubleValue carBwdMaxspeedEncoder;
+    private EncodedDoubleValue heightEncoder;
+    private EncodedDoubleValue weightEncoder;
+    private EncodedDoubleValue widthEncoder;
     private EncodedValue surfaceEncoder;
     private EncodedValue highwayEncoder;
     private EncodedValue transportModeEncoder;
+    private EncodedValue accessEncoder;
+    private boolean storeHeight = false;
+    private boolean storeWeight = false;
+    private boolean storeWidth = false;
 
     public DataFlagEncoder() {
+        this(5, 5, 0);
+    }
+
+    public DataFlagEncoder(PMap properties) {
+        this((int) properties.getLong("speed_bits", 5),
+                properties.getDouble("speed_factor", 5),
+                properties.getBool("turn_costs", false) ? 1 : 0);
+        this.properties = properties;
+        this.setStoreHeight(properties.getBool("store_height", false));
+        this.setStoreWeight(properties.getBool("store_weight", false));
+        this.setStoreWidth(properties.getBool("store_width", false));
+    }
+
+    public DataFlagEncoder(int speedBits, double speedFactor, int maxTurnCosts) {
         // TODO include turn information
-        super(5, 5, 0);
+        super(speedBits, speedFactor, maxTurnCosts);
 
         maxPossibleSpeed = 140;
         //
-        // TODO restrictions (forestry, agricultural, emergency, destination, private, delivery, customers)
+        // TODO restrictions (agricultural, emergency, destination, private, delivery, customers)
         //
 
         // highway and certain tags like ferry and shuttle_train which can be used here (no logical overlap)
         List<String> highwayList = Arrays.asList(
                 /* reserve index=0 for unset roads (not accessible) */
                 "_default",
-                "motorway", "motorway_link",
+                "motorway", "motorway_link", "motorroad",
                 "trunk", "trunk_link",
                 "primary", "primary_link", "secondary", "secondary_link", "tertiary", "tertiary_link",
                 "unclassified", "residential", "living_street", "service", "road", "track",
-                "cycleway", "steps", "path", "footway", "pedestrian",
+                "forestry", "cycleway", "steps", "path", "footway", "pedestrian",
                 "ferry", "shuttle_train");
         int counter = 0;
         for (String hw : highwayList) {
@@ -113,6 +141,26 @@ public class DataFlagEncoder extends AbstractFlagEncoder {
             surfaceMap.put(s, counter++);
         }
 
+        restrictions.addAll(Arrays.asList("motorcar", "motor_vehicle", "vehicle", "access"));
+
+        //Ordered in increasingly restrictive order (currently done subjective
+        List<String> accessList = Arrays.asList(
+                //"designated",
+                "yes",
+                //"permissive",
+                // From here on, we should add weight
+                "customers",
+                "destination",
+                "delivery",
+                "agricultural",
+                "no"
+        );
+
+        counter = 0;
+        for (String s : accessList) {
+            accessMap.put(s, counter++);
+        }
+
         // hiking or biking or bus routes
         // detect border crossing -> barrier:border_control
     }
@@ -132,6 +180,24 @@ public class DataFlagEncoder extends AbstractFlagEncoder {
         carBwdMaxspeedEncoder = new EncodedDoubleValue("car bwd maxspeed", shift, speedBits, speedFactor, 0, maxPossibleSpeed, true);
         shift += carBwdMaxspeedEncoder.getBits();
 
+        /* Value range: [3.0m, 5.4m] */
+        if (isStoreHeight()) {
+            heightEncoder = new EncodedDoubleValue("height restriction", shift, 7, 0.1, 0, 12, true);
+            shift += heightEncoder.getBits();
+        }
+
+        /* Value range: [1.0t, 59.5t] */
+        if (isStoreWeight()) {
+            weightEncoder = new EncodedDoubleValue("weight restriction", shift, 10, 0.1, 0, 100, true);
+            shift += weightEncoder.getBits();
+        }
+
+        /* Value range: [2.5m, 3.5m] */
+        if (isStoreWidth()) {
+            widthEncoder = new EncodedDoubleValue("width restriction", shift, 6, 0.1, 0, 6, true);
+            shift += widthEncoder.getBits();
+        }
+
         highwayEncoder = new EncodedValue("highway", shift, 5, 1, 0, highwayMap.size(), true);
         shift += highwayEncoder.getBits();
 
@@ -140,6 +206,9 @@ public class DataFlagEncoder extends AbstractFlagEncoder {
 
         transportModeEncoder = new EncodedValue("transport mode", shift, 3, 1, 0, transportModeMap.size(), true);
         shift += transportModeEncoder.getBits();
+
+        accessEncoder = new EncodedValue("access car", shift, 3, 1, 1, accessMap.size(), true);
+        shift += accessEncoder.getBits();
 
         return shift;
     }
@@ -151,56 +220,119 @@ public class DataFlagEncoder extends AbstractFlagEncoder {
 
     @Override
     public long acceptWay(ReaderWay way) {
-        return 1;
+        // important to skip unsupported highways, otherwise too many have to be removed after graph creation
+        // and node removal is not yet designed for that
+        if (getHighwayValue(way) == 0)
+            return 0;
+
+        return acceptBit;
+    }
+
+    int getHighwayValue(ReaderWay way) {
+        String highwayValue = way.getTag("highway");
+        Integer hwValue = highwayMap.get(highwayValue);
+        if (way.hasTag("impassable", "yes") || way.hasTag("status", "impassable"))
+            hwValue = 0;
+
+        if (hwValue == null) {
+            hwValue = 0;
+            if (way.hasTag("route", ferries)) {
+                String motorcarTag = way.getTag("motorcar");
+                if (motorcarTag == null)
+                    motorcarTag = way.getTag("motor_vehicle");
+
+                if (motorcarTag == null && !way.hasTag("foot") && !way.hasTag("bicycle")
+                        || "yes".equals(motorcarTag))
+                    hwValue = highwayMap.get("ferry");
+            }
+        }
+        return hwValue;
+    }
+
+    int getAccessValue(ReaderWay way) {
+        int accessValue = 0;
+        Integer tmpAccessValue = 0;
+        for (String restriction : restrictions) {
+            tmpAccessValue = accessMap.get(way.getTag(restriction, "yes"));
+            if (tmpAccessValue != null && tmpAccessValue > accessValue) {
+                accessValue = tmpAccessValue;
+            }
+        }
+
+        return accessValue;
+    }
+
+    //TODO It is bad that it's a bit static right now. If anyone changes the accessMap this method won't work anymore...
+    public AccessValue getEdgeAccessValue(long flags) {
+        int accessValue = (int) accessEncoder.getValue(flags);
+        switch (accessValue) {
+            case 0:
+                return AccessValue.ACCESSIBLE;
+            case 5:
+                return AccessValue.NOT_ACCESSIBLE;
+            default:
+                return AccessValue.EVENTUALLY_ACCESSIBLE;
+        }
     }
 
     @Override
     public long handleWayTags(ReaderWay way, long allowed, long relationFlags) {
+        if (!isAccept(allowed))
+            return 0;
+
         try {
             // HIGHWAY
-            String highwayValue = way.getTag("highway");
-            Integer hwValue = highwayMap.get(highwayValue);
-            if (way.hasTag("impassable", "yes") || way.hasTag("status", "impassable"))
-                hwValue = 0;
-
-            if (hwValue == null) {
-                hwValue = 0;
-                if (way.hasTag("route", ferries)) {
-                    String motorcarTag = way.getTag("motorcar");
-                    if (motorcarTag == null)
-                        motorcarTag = way.getTag("motor_vehicle");
-
-                    if (motorcarTag == null && !way.hasTag("foot") && !way.hasTag("bicycle")
-                            || "yes".equals(motorcarTag))
-                        hwValue = highwayMap.get("ferry");
-                }
-            }
-
+            int hwValue = getHighwayValue(way);
             // exclude any routing like if you have car and need to exclude all rails or ships
             if (hwValue == 0)
                 return 0;
 
             long flags = 0;
+            if (isFerry(allowed)) {
+                hwValue = highwayMap.get("ferry");
+            }
+
+            flags = highwayEncoder.setValue(0, hwValue);
 
             // MAXSPEED
             double maxSpeed = parseSpeed(way.getTag("maxspeed"));
             double fwdSpeed = parseSpeed(way.getTag("maxspeed:forward"));
             if (fwdSpeed < 0 || maxSpeed > 0 && maxSpeed < fwdSpeed)
                 fwdSpeed = maxSpeed;
+            if (fwdSpeed > getMaxPossibleSpeed())
+                fwdSpeed = getMaxPossibleSpeed();
+
 
             double bwdSpeed = parseSpeed(way.getTag("maxspeed:backward"));
             if (bwdSpeed < 0 || maxSpeed > 0 && maxSpeed < bwdSpeed)
                 bwdSpeed = maxSpeed;
+            if (bwdSpeed > getMaxPossibleSpeed())
+                bwdSpeed = getMaxPossibleSpeed();
 
-            // 0 is reserved for default i.e. no maxspeed sign
-            // TODO currently 140 is used for "none" speed limit
+
+            // 0 is reserved for default i.e. no maxspeed sign (does not imply no speed limit)
+            // TODO and 140 should be used for "none" speed limit on German Autobahn
             if (fwdSpeed > 0)
                 flags = carFwdMaxspeedEncoder.setDoubleValue(flags, fwdSpeed);
 
             if (bwdSpeed > 0)
                 flags = carBwdMaxspeedEncoder.setDoubleValue(flags, bwdSpeed);
 
-            flags = highwayEncoder.setValue(flags, hwValue);
+            // Road attributes (height, weight, width)
+            if (isStoreHeight()) {
+                List<String> heightTags = Arrays.asList("maxheight", "maxheight:physical");
+                flags = extractMeter(way, flags, heightEncoder, heightTags);
+            }
+
+            if (isStoreWeight()) {
+                List<String> weightTags = Arrays.asList("maxweight", "maxgcweight");
+                flags = extractTons(way, flags, weightEncoder, weightTags);
+            }
+
+            if (isStoreWidth()) {
+                List<String> widthTags = Arrays.asList("maxwidth", "maxwidth:physical");
+                flags = extractMeter(way, flags, widthEncoder, widthTags);
+            }
 
             // SURFACE
             String surfaceValue = way.getTag("surface");
@@ -245,9 +377,106 @@ public class DataFlagEncoder extends AbstractFlagEncoder {
             if (!isBit0Empty(flags))
                 throw new IllegalStateException("bit0 has to be empty on creation");
 
+            flags = accessEncoder.setValue(flags, getAccessValue(way));
+
             return flags;
         } catch (Exception ex) {
             throw new RuntimeException("Error while parsing way " + way.toString(), ex);
+        }
+    }
+
+    private long extractMeter(ReaderWay way, long flags, EncodedDoubleValue valueEncoder, List<String> keys) {
+        String value = way.getFirstPriorityTag(keys);
+        if (Helper.isEmpty(value)) return flags;
+
+        double val;
+        try {
+            val = stringToMeter(value);
+        } catch (Exception ex) {
+            LOG.warn("Unable to extract meter from malformed road attribute '{}' for way (OSM_ID = {}).", value, way.getId(), ex);
+            return flags;
+        }
+
+        try {
+            flags = valueEncoder.setDoubleValue(flags, val);
+        }
+        catch (IllegalArgumentException e) {
+            LOG.warn("Unable to process value '{}' for way (OSM_ID = {}).", val, way.getId(), e);
+        }
+
+        return flags;
+    }
+
+    private long extractTons(ReaderWay way, long flags, EncodedDoubleValue valueEncoder, List<String> keys) {
+        String value = way.getFirstPriorityTag(keys);
+        if (Helper.isEmpty(value)) return flags;
+
+        double val;
+        try {
+            val = stringToTons(value);
+        } catch (Throwable t) {
+            LOG.warn("Unable to extract tons from malformed road attribute '{}' for way (OSM_ID = {}).", value, way.getId(), t);
+            return flags;
+        }
+
+        try {
+            flags = valueEncoder.setDoubleValue(flags, val);
+        } catch (IllegalArgumentException e) {
+            LOG.warn("Unable to process tons value '{}' for way (OSM_ID = {}).", val, way.getId(), e);
+        }
+
+        return flags;
+    }
+
+    public static double stringToTons(String value) {
+        value = value.toLowerCase().replaceAll(" ", "").replaceAll("(tons|ton)", "t");
+        value = value.replace("mgw", "").trim();
+        double factor = 1;
+        if (value.endsWith("t")) {
+            value = value.substring(0, value.length() - 1);
+        } else if (value.endsWith("lbs")) {
+            value = value.substring(0, value.length() - 3);
+            factor = 0.00045359237;
+        }
+
+        return Double.parseDouble(value) * factor;
+    }
+
+    public static double stringToMeter(String value) {
+        value = value.toLowerCase().replaceAll(" ", "").replaceAll("(meters|meter|mtrs|mtr|mt|m\\.)", "m");
+        double factor = 1;
+        double offset = 0;
+        value = value.replaceAll("(\\\"|\'\')", "in").replaceAll("(\'|feet)", "ft");
+        if (value.startsWith("~") || value.contains("approx")) {
+            value = value.replaceAll("(\\~|approx)", "").trim();
+            factor = 0.8;
+        }
+
+        if (value.endsWith("in")) {
+            int startIndex = value.indexOf("ft");
+            String inchValue;
+            if (startIndex < 0) {
+                startIndex = 0;
+            } else {
+                startIndex += 2;
+            }
+
+            inchValue = value.substring(startIndex, value.length() - 2);
+            value = value.substring(0, startIndex);
+            offset = Double.parseDouble(inchValue) * 0.0254;
+        }
+
+        if (value.endsWith("ft")) {
+            value = value.substring(0, value.length() - 2);
+            factor *= 0.3048;
+        } else if (value.endsWith("m")) {
+            value = value.substring(0, value.length() - 1);
+        }
+
+        if (value.isEmpty()) {
+            return offset;
+        } else {
+            return Double.parseDouble(value) * factor + offset;
         }
     }
 
@@ -255,16 +484,6 @@ public class DataFlagEncoder extends AbstractFlagEncoder {
     public long reverseFlags(long flags) {
         // see #728 for an explanation
         return flags ^ bit0;
-
-        // old version which does not required isBit0Empty checks when reading:
-        //
-//        flags = super.reverseFlags(flags);
-//
-//        // lower level swapping of speeds
-//        double bwd = carBwdMaxspeedEncoder.getDoubleValue(flags);
-//        flags = carBwdMaxspeedEncoder.setDoubleValue(flags, carFwdMaxspeedEncoder.getDoubleValue(flags));
-//        flags = carFwdMaxspeedEncoder.setDoubleValue(flags, bwd);
-//        return flags;
     }
 
     /**
@@ -289,6 +508,9 @@ public class DataFlagEncoder extends AbstractFlagEncoder {
     }
 
     public double[] getHighwaySpeedMap(Map<String, Double> map) {
+        if (map == null)
+            throw new IllegalArgumentException("Map cannot be null when calling getHighwaySpeedMap");
+
         double[] res = new double[highwayMap.size()];
         for (Entry<String, Double> e : map.entrySet()) {
             Integer integ = highwayMap.get(e.getKey());
@@ -319,13 +541,13 @@ public class DataFlagEncoder extends AbstractFlagEncoder {
     public int getTransportMode(EdgeIteratorState edge) {
         return (int) transportModeEncoder.getValue(edge.getFlags());
     }
-    
+
     public boolean isTransportModeTunnel(EdgeIteratorState edge) {
-    	return transportModeEncoder.getValue(edge.getFlags()) == this.transportModeTunnelValue;
+        return transportModeEncoder.getValue(edge.getFlags()) == this.transportModeTunnelValue;
     }
 
     public boolean isTransportModeBridge(EdgeIteratorState edge) {
-    	return transportModeEncoder.getValue(edge.getFlags()) == this.transportModeBridgeValue;
+        return transportModeEncoder.getValue(edge.getFlags()) == this.transportModeBridgeValue;
     }
 
     public String getTransportModeAsString(EdgeIteratorState edge) {
@@ -406,15 +628,43 @@ public class DataFlagEncoder extends AbstractFlagEncoder {
         return val;
     }
 
+    public double getHeight(EdgeIteratorState edge) {
+        long flags = edge.getFlags();
+        return heightEncoder.getDoubleValue(flags);
+    }
+
+    public double getWeight(EdgeIteratorState edge) {
+        long flags = edge.getFlags();
+        return weightEncoder.getDoubleValue(flags);
+    }
+
+    public double getWidth(EdgeIteratorState edge) {
+        long flags = edge.getFlags();
+        return widthEncoder.getDoubleValue(flags);
+    }
+
     @Override
     public long flagsDefault(boolean forward, boolean backward) {
         // just pick car mode to set access values?
-        throw new RuntimeException("do not call flagsDefault");
+        // throw new RuntimeException("do not call flagsDefault");
+        // TODO This is called on each of the encoders so I had to replace the runtime 
+        // exception with something, but I'm not sure this is correct.        
+        return setAccess(0, forward, backward);
     }
 
     @Override
     public long setAccess(long flags, boolean forward, boolean backward) {
-        // TODO in subnetwork we need to remove access for certain profiles or set of roads?
+        // TODO we should interpret access for *any* vehicle
+        // TODO in subnetwork we need to remove access for certain weighting profiles (or set of roads?)
+        boolean isForward = isBit0Empty(flags);
+        if (!isForward) {
+            boolean tmp = forward;
+            forward = backward;
+            backward = tmp;
+        }
+
+        flags = forward ? flags | forwardBit : flags & ~forwardBit;
+        flags = backward ? flags | backwardBit : flags & ~backwardBit;
         return flags;
     }
 
@@ -430,9 +680,7 @@ public class DataFlagEncoder extends AbstractFlagEncoder {
 
     @Override
     public double getSpeed(long flags) {
-        // TODO fix Path.calcMillis(Path.java:255)
-        // use pluggable weighting.calcMillis but include reverse somehow
-        return 50;
+        throw new UnsupportedOperationException("Calculate speed via more customizable Weighting.calcMillis method");
     }
 
     @Override
@@ -473,6 +721,41 @@ public class DataFlagEncoder extends AbstractFlagEncoder {
         return GenericWeighting.class.isAssignableFrom(feature);
     }
 
+    public DataFlagEncoder setStoreHeight(boolean storeHeight) {
+        this.storeHeight = storeHeight;
+        return this;
+    }
+
+    public boolean isStoreHeight() {
+        return storeHeight;
+    }
+
+    public DataFlagEncoder setStoreWeight(boolean storeWeight) {
+        this.storeWeight = storeWeight;
+        return this;
+    }
+
+    public boolean isStoreWeight() {
+        return storeWeight;
+    }
+
+    public DataFlagEncoder setStoreWidth(boolean storeWidth) {
+        this.storeWidth = storeWidth;
+        return this;
+    }
+
+    public boolean isStoreWidth() {
+        return storeWidth;
+    }
+
+    @Override
+    protected String getPropertiesString() {
+        return super.getPropertiesString() +
+                "|store_height=" + storeHeight +
+                "|store_weight=" + storeWeight +
+                "|store_width=" + storeWidth;
+    }
+
     @Override
     public int getVersion() {
         return 1;
@@ -495,6 +778,25 @@ public class DataFlagEncoder extends AbstractFlagEncoder {
 
         ConfigMap cMap = new ConfigMap();
         cMap.put("highways", map);
+
+        cloneDoubleAttribute(weightingMap, cMap, GenericWeighting.HEIGHT_LIMIT, 0d);
+        cloneDoubleAttribute(weightingMap, cMap, GenericWeighting.WEIGHT_LIMIT, 0d);
+        cloneDoubleAttribute(weightingMap, cMap, GenericWeighting.WIDTH_LIMIT, 0d);
+
         return cMap;
+    }
+
+    private void cloneDoubleAttribute(PMap weightingMap, ConfigMap cMap, String key, double _default) {
+        if (weightingMap.has(key))
+            cMap.put(key, weightingMap.getDouble(key, _default));
+
+    }
+
+    public enum AccessValue {
+
+        ACCESSIBLE,
+        EVENTUALLY_ACCESSIBLE,
+        NOT_ACCESSIBLE
+
     }
 }
