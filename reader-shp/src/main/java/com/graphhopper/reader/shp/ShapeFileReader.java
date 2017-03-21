@@ -55,6 +55,7 @@ public abstract class ShapeFileReader implements DataReader {
         this.graphStorage = ghStorage;
         this.graph = ghStorage;
         this.nodeAccess = graph.getNodeAccess();
+        this.encodingManager = ghStorage.getEncodingManager();
     }
 
     @Override
@@ -101,7 +102,7 @@ public abstract class ShapeFileReader implements DataReader {
     }
 
     /*
-	 * Get longitude using the current long-lat order convention
+     * Get longitude using the current long-lat order convention
      */
     protected double lng(Coordinate coordinate) {
         return coordinate.getOrdinate(0);
@@ -116,11 +117,5 @@ public abstract class ShapeFileReader implements DataReader {
 
     protected void saveTowerPosition(int nodeId, Coordinate point) {
         nodeAccess.setNode(nodeId, lat(point), lng(point));
-    }
-
-    @Override
-    public ShapeFileReader setEncodingManager(EncodingManager encodingManager) {
-        this.encodingManager = encodingManager;
-        return this;
     }
 }

@@ -36,7 +36,7 @@ import static com.graphhopper.routing.util.PriorityCode.*;
  * @author Nop
  * @author ratrun
  */
-public class BikeCommonFlagEncoder extends AbstractFlagEncoder {
+abstract public class BikeCommonFlagEncoder extends AbstractFlagEncoder {
     /**
      * Reports whether this edge is unpaved.
      */
@@ -199,7 +199,7 @@ public class BikeCommonFlagEncoder extends AbstractFlagEncoder {
 
     @Override
     public int getVersion() {
-        return 1;
+        return 2;
     }
 
     @Override
@@ -258,9 +258,9 @@ public class BikeCommonFlagEncoder extends AbstractFlagEncoder {
         }
 
         // use the way if it is tagged for bikes
-        if (way.hasTag("bicycle", intendedValues) || 
-            way.hasTag("bicycle", "dismount") || 
-            way.hasTag("highway", "cycleway"))
+        if (way.hasTag("bicycle", intendedValues) ||
+                way.hasTag("bicycle", "dismount") ||
+                way.hasTag("highway", "cycleway"))
             return acceptBit;
 
         // accept only if explicitly tagged for bike usage

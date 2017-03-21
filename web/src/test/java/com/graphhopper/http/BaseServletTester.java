@@ -23,19 +23,23 @@ import com.google.inject.Module;
 import com.graphhopper.util.CmdArgs;
 import com.graphhopper.util.Downloader;
 import com.graphhopper.util.Helper;
+
 import java.io.IOException;
+
 import org.json.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.net.HttpURLConnection;
 import java.util.concurrent.TimeUnit;
+
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
 import org.eclipse.jetty.http.HttpStatus;
+
 import static org.junit.Assert.assertEquals;
 
 /**
@@ -45,7 +49,7 @@ public class BaseServletTester {
     private static final MediaType MT_JSON = MediaType.parse("application/json; charset=utf-8");
     private static final MediaType MT_XML = MediaType.parse("application/gpx+xml; charset=utf-8");
     protected static final Logger LOGGER = LoggerFactory.getLogger(BaseServletTester.class);
-    private final OkHttpClient client = new OkHttpClient.Builder().connectTimeout(1020, TimeUnit.SECONDS).build();
+    private final OkHttpClient client = new OkHttpClient.Builder().connectTimeout(30, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS).build();
     protected static int port;
     private static GHServer server;
     protected Injector injector;
