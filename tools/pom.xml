@@ -5,14 +5,14 @@
 
     <groupId>com.graphhopper</groupId>
     <artifactId>graphhopper-tools</artifactId>
-    <version>0.9-SNAPSHOT</version>
+    <version>0.10-SNAPSHOT</version>
     <packaging>jar</packaging>
     <name>GraphHopper Tools</name>
 
     <parent>
         <groupId>com.graphhopper</groupId>
         <artifactId>graphhopper-parent</artifactId>    	
-        <version>0.9-SNAPSHOT</version>
+        <version>0.10-SNAPSHOT</version>
     </parent>
 
     <dependencies>
@@ -62,6 +62,15 @@
                         <descriptorRef>jar-with-dependencies</descriptorRef>
                     </descriptorRefs>
                 </configuration>
+                <executions>
+                    <execution>
+                        <id>make-assembly</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>single</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>
