@@ -48,7 +48,11 @@ public class PathSimplification {
 
         this.pathDetails = pathWrapper.getPathDetails();
         for (String name : pathDetails.keySet()) {
-            listsToSimplify.add(pathDetails.get(name));
+            List<PathDetail> pathDetailList = pathDetails.get(name);
+            if (pathDetailList.isEmpty())
+                throw new IllegalStateException("PathDetails " + name + " must not be empty");
+
+            listsToSimplify.add(pathDetailList);
         }
         this.douglasPeucker = douglasPeucker;
     }
@@ -135,6 +139,8 @@ public class PathSimplification {
                 prevPD = list.get(i);
             }
         }
+        // Make sure that the instruction references are not broken
+        pointList.makeImmutable();
         return pointList;
     }
 
@@ -155,7 +161,7 @@ public class PathSimplification {
 
     private void reduceLength(Object o, int index, int startIndex, int newEndIndex) {
         if (o instanceof InstructionList) {
-            ((InstructionList) o).get(index).setPoints(this.pointList.copy(startIndex, newEndIndex));
+            ((InstructionList) o).get(index).setPoints(this.pointList.shallowCopy(startIndex, newEndIndex, false));
         } else if (o instanceof List) {
             PathDetail pd = ((List<PathDetail>) o).get(index);
             pd.setFirst(startIndex);

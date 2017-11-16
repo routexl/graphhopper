@@ -114,6 +114,7 @@ public class GraphHopper implements GraphHopperAPI {
     private ElevationProvider eleProvider = ElevationProvider.NOOP;
     private FlagEncoderFactory flagEncoderFactory = FlagEncoderFactory.DEFAULT;
     private final ReadWriteLock readWriteLock = new ReentrantReadWriteLock();
+    private PathDetailsBuilderFactory pathBuilderFactory = new PathDetailsBuilderFactory();
 
     public GraphHopper() {
         chFactoryDecorator.setEnabled(true);
@@ -207,6 +208,15 @@ public class GraphHopper implements GraphHopperAPI {
     public GraphHopper setTraversalMode(TraversalMode traversalMode) {
         this.traversalMode = traversalMode;
         return this;
+    }
+
+    public GraphHopper setPathDetailsBuilderFactory(PathDetailsBuilderFactory pathBuilderFactory) {
+        this.pathBuilderFactory = pathBuilderFactory;
+        return this;
+    }
+
+    public PathDetailsBuilderFactory getPathDetailsBuilderFactory() {
+        return pathBuilderFactory;
     }
 
     /**
@@ -911,7 +921,7 @@ public class GraphHopper implements GraphHopperAPI {
         if (hintsMap.has(Routing.BLOCK_AREA)) {
             String blockAreaStr = hintsMap.get(Parameters.Routing.BLOCK_AREA, "");
             GraphEdgeIdFinder.BlockArea blockArea = new GraphEdgeIdFinder(graph, locationIndex).
-                    parseBlockArea(blockAreaStr, new DefaultEdgeFilter(encoder));
+                    parseBlockArea(blockAreaStr, new DefaultEdgeFilter(encoder), hintsMap.getDouble("block_area.edge_id_max_area", 1000 * 1000));
             return new BlockAreaWeighting(weighting, blockArea);
         }
 
@@ -977,8 +987,7 @@ public class GraphHopper implements GraphHopperAPI {
 
             String algoStr = request.getAlgorithm();
             if (algoStr.isEmpty())
-                algoStr = chFactoryDecorator.isEnabled() && !disableCH &&
-                        !(lmFactoryDecorator.isEnabled() && !disableLM) ? DIJKSTRA_BI : ASTAR_BI;
+                algoStr = chFactoryDecorator.isEnabled() && !disableCH ? DIJKSTRA_BI : ASTAR_BI;
 
             List<GHPoint> points = request.getPoints();
             // TODO Maybe we should think about a isRequestValid method that checks all that stuff that we could do to fail fast
@@ -1051,14 +1060,13 @@ public class GraphHopper implements GraphHopperAPI {
                 boolean tmpEnableInstructions = hints.getBool(Routing.INSTRUCTIONS, enableInstructions);
                 boolean tmpCalcPoints = hints.getBool(Routing.CALC_POINTS, calcPoints);
                 double wayPointMaxDistance = hints.getDouble(Routing.WAY_POINT_MAX_DISTANCE, 1d);
-                PathDetailsBuilderFactory calculatorFactory = new PathDetailsBuilderFactory(request.getPathDetails(), encoder, weighting);
 
                 DouglasPeucker peucker = new DouglasPeucker().setMaxDistance(wayPointMaxDistance);
                 PathMerger pathMerger = new PathMerger().
                         setCalcPoints(tmpCalcPoints).
                         setDouglasPeucker(peucker).
                         setEnableInstructions(tmpEnableInstructions).
-                        setPathDetailsBuilderFactory(calculatorFactory).
+                        setPathDetailsBuilders(pathBuilderFactory, request.getPathDetails()).
                         setSimplifyResponse(simplifyResponse && wayPointMaxDistance > 0);
 
                 if (routingTemplate.isReady(pathMerger, tr))
@@ -1105,7 +1113,7 @@ public class GraphHopper implements GraphHopperAPI {
         for (int i = 0; i < points.size(); i++) {
             GHPoint point = points.get(i);
             if (!bounds.contains(point.getLat(), point.getLon())) {
-                throw new PointOutOfBoundsException("Point " + i + " is ouf of bounds: " + point, i);
+                throw new PointOutOfBoundsException("Point " + i + " is out of bounds: " + point, i);
             }
         }
     }
@@ -1178,7 +1186,7 @@ public class GraphHopper implements GraphHopperAPI {
      * For landmarks it is required to always call this method: either it creates the landmark data or it loads it.
      */
     protected void loadOrPrepareLM() {
-        boolean tmpPrepare = lmFactoryDecorator.isEnabled();
+        boolean tmpPrepare = lmFactoryDecorator.isEnabled() && !lmFactoryDecorator.getPreparations().isEmpty();
         if (tmpPrepare) {
             ensureWriteAccess();
             ghStorage.freeze();
