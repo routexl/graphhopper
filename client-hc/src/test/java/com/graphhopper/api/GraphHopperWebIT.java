@@ -120,11 +120,11 @@ public class GraphHopperWebIT {
                 addPoint(new GHPoint(52.399067, 13.469238));
 
         GHResponse res = gh.route(req);
-        assertEquals("Turn right onto B 246", res.getBest().getInstructions().get(4).getName());
+        assertEquals("Continue onto B 96", res.getBest().getInstructions().get(4).getName());
 
         req.getHints().put("turn_description", false);
         res = gh.route(req);
-        assertEquals("B 246", res.getBest().getInstructions().get(4).getName());
+        assertEquals("B 96", res.getBest().getInstructions().get(4).getName());
     }
 
     @Test
@@ -250,6 +250,29 @@ public class GraphHopperWebIT {
 
         assertEquals(9834, res.getDistance(1, 2), 20);
         assertEquals(1695, res.getWeight(1, 2), 10);
+    }
+
+    @Test
+    public void testMatrix_DoNotWrapHints() {
+        final GraphHopperMatrixWeb ghMatrix = new GraphHopperMatrixWeb(new GHMatrixBatchRequester() {
+            @Override
+            protected String postJson(String url, JsonNode data) throws IOException {
+                assertFalse(data.has("hints"));
+                assertTrue(data.has("something"));
+                return super.postJson(url, data);
+            }
+        });
+        ghMatrix.setKey(System.getProperty("graphhopper.key", KEY));
+
+        GHMRequest req = new GHMRequest();
+        req.addPoint(new GHPoint(49.6724, 11.3494));
+        req.addPoint(new GHPoint(49.6550, 11.4180));
+        req.getHints().put("something", "xy");
+        ghMatrix.route(req);
+
+        // clashing parameter will overwrite!
+        req.getHints().put("vehicle", "xy");
+        assertEquals("xy", req.getVehicle());
     }
 
     @Test
