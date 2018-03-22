@@ -66,7 +66,7 @@ public final class GraphHopperGtfs implements GraphHopperAPI {
         }
 
         public GraphHopperGtfs createWithoutRealtimeFeed() {
-            return new GraphHopperGtfs(flagEncoder, translationMap, graphHopperStorage, locationIndex, gtfsStorage, RealtimeFeed.empty());
+            return new GraphHopperGtfs(flagEncoder, translationMap, graphHopperStorage, locationIndex, gtfsStorage, RealtimeFeed.empty(gtfsStorage));
         }
     }
 
@@ -120,7 +120,7 @@ public final class GraphHopperGtfs implements GraphHopperAPI {
             arriveBy = request.getHints().getBool(Parameters.PT.ARRIVE_BY, false);
             walkSpeedKmH = request.getHints().getDouble(Parameters.PT.WALK_SPEED, 5.0);
             maxWalkDistancePerLeg = request.getHints().getDouble(Parameters.PT.MAX_WALK_DISTANCE_PER_LEG, 1000.0);
-            maxTransferDistancePerLeg = request.getHints().getDouble(Parameters.PT.MAX_TRANSFER_DISTANCE_PER_LEG, separateWalkQuery ? -1 : Double.MAX_VALUE);
+            maxTransferDistancePerLeg = request.getHints().getDouble(Parameters.PT.MAX_TRANSFER_DISTANCE_PER_LEG, Double.MAX_VALUE);
             weighting = createPtTravelTimeWeighting(flagEncoder, arriveBy, walkSpeedKmH);
             translation = translationMap.getWithFallBack(request.getLocale());
             if (request.getPoints().size() != 2) {
@@ -222,11 +222,23 @@ public final class GraphHopperGtfs implements GraphHopperAPI {
                     legs.addAll(walkPaths.get(egressNode(solution)).getLegs());
                 }
                 final PathWrapper pathWrapper = tripFromLabel.createPathWrapper(translation, waypoints, legs);
+                pathWrapper.setImpossible(isImpossible(solution));
                 // TODO: remove
                 pathWrapper.setTime((solution.currentTime - initialTime.toEpochMilli()) * (arriveBy ? -1 : 1));
                 response.add(pathWrapper);
             }
-            response.getAll().sort(Comparator.comparingDouble(PathWrapper::getTime));
+            Comparator<PathWrapper> c = Comparator.comparingInt(p -> (p.isImpossible() ? 1 : 0));
+            Comparator<PathWrapper> d = Comparator.comparingDouble(PathWrapper::getTime);
+            response.getAll().sort(c.thenComparing(d));
+        }
+
+        private boolean isImpossible(Label solution) {
+            for (Label i = solution; i != null; i = i.parent) {
+                if (i.impossible) {
+                    return true;
+                }
+            }
+            return false;
         }
 
         private int accessNode(Label solution) {
@@ -254,7 +266,7 @@ public final class GraphHopperGtfs implements GraphHopperAPI {
         private List<Label> findPaths(int startNode, int destNode) {
             StopWatch stopWatch = new StopWatch().start();
             graphExplorer = new GraphExplorer(queryGraph, weighting, flagEncoder, gtfsStorage, realtimeFeed, arriveBy, extraNodes, extraEdges, false);
-            MultiCriteriaLabelSetting router = new MultiCriteriaLabelSetting(graphExplorer, weighting, arriveBy, maxWalkDistancePerLeg, maxTransferDistancePerLeg, !ignoreTransfers, profileQuery, maxVisitedNodesForRequest);
+            MultiCriteriaLabelSetting router = new MultiCriteriaLabelSetting(graphExplorer, weighting, arriveBy, maxWalkDistancePerLeg, -1, !ignoreTransfers, profileQuery, maxVisitedNodesForRequest);
             final Stream<Label> labels = router.calcLabels(startNode, destNode, initialTime);
             List<Label> solutions = labels
                     .filter(current -> destNode == current.adjNode)
@@ -304,15 +316,13 @@ public final class GraphHopperGtfs implements GraphHopperAPI {
             for (String osmFile : osmFiles) {
                 OSMReader osmReader = new OSMReader(graphHopperStorage);
                 osmReader.setFile(new File(osmFile));
-                osmReader.setDontCreateStorage(true);
+                osmReader.setCreateStorage(false);
                 try {
                     osmReader.readGraph();
                 } catch (IOException e) {
                     throw new RuntimeException(e);
                 }
             }
-            new PrepareRoutingSubnetworks(graphHopperStorage, Collections.singletonList(ptFlagEncoder)).doWork();
-
             int id = 0;
             for (String gtfsFile : gtfsFiles) {
                 try {
@@ -331,8 +341,12 @@ public final class GraphHopperGtfs implements GraphHopperAPI {
                 walkNetworkIndex = new EmptyLocationIndex();
             }
             for (int i = 0; i < id; i++) {
-                new GtfsReader("gtfs_" + i, graphHopperStorage, ptFlagEncoder, walkNetworkIndex).readGraph();
+                new GtfsReader("gtfs_" + i, graphHopperStorage, gtfsStorage, ptFlagEncoder, walkNetworkIndex).readGraph();
             }
+            // This currently needs to happen as the last step, since we cannot add new nodes after this step.
+            // This means that disconnected parts of the transit network are removed as well.
+            // If we don't want that, we need to think of something.
+            new PrepareRoutingSubnetworks(graphHopperStorage, Collections.singletonList(ptFlagEncoder)).doWork();
             graphHopperStorage.flush();
             return graphHopperStorage;
         }
