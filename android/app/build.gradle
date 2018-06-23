@@ -20,7 +20,6 @@ android {
 
     lintOptions {
         /* CGIARProvider refers to java.awt
-         * Helper7 refers to java.lang.management
          * HeightTile refers to javax.imageio and java.awt
          * OSMElement refers to javax.xml.stream
          */
@@ -36,7 +35,7 @@ configurations.all {
  **/
 
 dependencies {
-    implementation(group: 'com.graphhopper', name: 'graphhopper-core', version: '0.10-SNAPSHOT') {
+    implementation(group: 'com.graphhopper', name: 'graphhopper-core', version: '0.11-SNAPSHOT') {
        exclude group: 'com.google.protobuf', module: 'protobuf-java'
        exclude group: 'org.openstreetmap.osmosis', module: 'osmosis-osm-binary'
        exclude group: 'org.apache.xmlgraphics', module: 'xmlgraphics-commons'
