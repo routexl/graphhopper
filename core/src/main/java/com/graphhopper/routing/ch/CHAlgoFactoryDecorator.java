@@ -51,7 +51,7 @@ public class CHAlgoFactoryDecorator implements RoutingAlgorithmFactoryDecorator 
     // as we need the strings to create the GraphHopperStorage and the GraphHopperStorage to create the preparations from the Weighting objects currently requiring the encoders
     private final List<Weighting> weightings = new ArrayList<>();
     private final Set<String> weightingsAsStrings = new LinkedHashSet<>();
-    private boolean disablingAllowed = false;
+    private boolean disablingAllowed = true;
     // for backward compatibility enable CH by default.
     private boolean enabled = true;
     private int preparationThreads;
