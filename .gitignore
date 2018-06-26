@@ -47,3 +47,5 @@ local.properties
 !malta-latest.osm.pbf
 /graph-cache
 package-lock.json
+/start.sh
+/.gitignore
