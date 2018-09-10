@@ -15,21 +15,30 @@
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
  */
-package com.graphhopper.search;
+package com.graphhopper.routing.util;
 
-import com.graphhopper.util.shapes.GHPlace;
+import com.graphhopper.storage.CHGraph;
+import com.graphhopper.util.EdgeIteratorState;
 
-import java.util.List;
+public class IgnoreNodeFilter implements EdgeFilter {
+    private int avoidNode;
+    private CHGraph graph;
+    private int maxLevel;
 
-/**
- * Interface to convert from place names to points.
- * <p>
- *
- * @author Peter Karich
- */
-public interface Geocoding {
-    /**
-     * Returns a list of matching points for the specified place query string.
-     */
-    List<GHPlace> names2places(GHPlace... place);
+    public IgnoreNodeFilter(CHGraph chGraph, int maxLevel) {
+        this.graph = chGraph;
+        this.maxLevel = maxLevel;
+    }
+
+    public IgnoreNodeFilter setAvoidNode(int node) {
+        this.avoidNode = node;
+        return this;
+    }
+
+    @Override
+    public final boolean accept(EdgeIteratorState iter) {
+        // ignore if it is skipNode or adjNode is already contracted
+        int node = iter.getAdjNode();
+        return avoidNode != node && graph.getLevel(node) == maxLevel;
+    }
 }

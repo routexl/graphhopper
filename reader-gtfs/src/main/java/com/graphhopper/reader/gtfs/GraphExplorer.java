@@ -21,6 +21,8 @@ package com.graphhopper.reader.gtfs;
 import com.google.common.collect.ArrayListMultimap;
 import com.graphhopper.routing.VirtualEdgeIteratorState;
 import com.graphhopper.routing.util.DefaultEdgeFilter;
+import com.graphhopper.routing.util.EdgeFilter;
+import com.graphhopper.routing.weighting.Weighting;
 import com.graphhopper.storage.Graph;
 import com.graphhopper.storage.NodeAccess;
 import com.graphhopper.util.EdgeExplorer;
@@ -49,13 +51,21 @@ final class GraphExplorer {
     private final ArrayListMultimap<Integer, VirtualEdgeIteratorState> extraEdgesBySource = ArrayListMultimap.create();
     private final ArrayListMultimap<Integer, VirtualEdgeIteratorState> extraEdgesByDestination = ArrayListMultimap.create();
     private final Graph graph;
+    private final Weighting accessEgressWeighting;
     private final boolean walkOnly;
     private double walkSpeedKmH;
 
 
-    GraphExplorer(Graph graph, PtFlagEncoder flagEncoder, GtfsStorage gtfsStorage, RealtimeFeed realtimeFeed, boolean reverse, List<VirtualEdgeIteratorState> extraEdges, boolean walkOnly, double walkSpeedKmh) {
+    GraphExplorer(Graph graph, Weighting accessEgressWeighting, PtFlagEncoder flagEncoder, GtfsStorage gtfsStorage, RealtimeFeed realtimeFeed, boolean reverse, List<VirtualEdgeIteratorState> extraEdges, boolean walkOnly, double walkSpeedKmh) {
         this.graph = graph;
-        this.edgeExplorer = graph.createEdgeExplorer(reverse ? DefaultEdgeFilter.inEdges(flagEncoder) : DefaultEdgeFilter.outEdges(flagEncoder));
+        this.accessEgressWeighting = accessEgressWeighting;
+        DefaultEdgeFilter accessEgressIn = DefaultEdgeFilter.inEdges(accessEgressWeighting.getFlagEncoder());
+        DefaultEdgeFilter accessEgressOut = DefaultEdgeFilter.outEdges(accessEgressWeighting.getFlagEncoder());
+        DefaultEdgeFilter ptIn = DefaultEdgeFilter.inEdges(flagEncoder);
+        DefaultEdgeFilter ptOut = DefaultEdgeFilter.outEdges(flagEncoder);
+        EdgeFilter in = edgeState -> accessEgressIn.accept(edgeState) || ptIn.accept(edgeState);
+        EdgeFilter out = edgeState -> accessEgressOut.accept(edgeState) || ptOut.accept(edgeState);
+        this.edgeExplorer = graph.createEdgeExplorer(reverse ? in : out);
         this.flagEncoder = flagEncoder;
         this.gtfsStorage = gtfsStorage;
         this.realtimeFeed = realtimeFeed;
@@ -100,7 +110,7 @@ final class GraphExplorer {
         GtfsStorage.EdgeType edgeType = flagEncoder.getEdgeType(edge.getFlags());
         switch (edgeType) {
             case HIGHWAY:
-                return (long) (getWalkDistance(edge) * 3.6 / walkSpeedKmH) * 1000;
+                return (long) (accessEgressWeighting.calcMillis(edge, reverse, -1) * (5.0 / walkSpeedKmH));
             case ENTER_TIME_EXPANDED_NETWORK:
                 if (reverse) {
                     return 0;
@@ -131,12 +141,13 @@ final class GraphExplorer {
     }
 
     private long waitingTime(EdgeIteratorState edge, long earliestStartTime) {
-        return flagEncoder.getTime(edge.getFlags()) * 1000 - millisOnTravelDay(edge, earliestStartTime);
-    }
-
-    private int secondsOnTrafficDay(EdgeIteratorState edge, long instant) {
-        final ZoneId zoneId = gtfsStorage.getTimeZones().get(flagEncoder.getValidityId(edge.getFlags())).zoneId;
-        return Instant.ofEpochMilli(instant).atZone(zoneId).toLocalTime().toSecondOfDay();
+        long l = flagEncoder.getTime(edge.getFlags()) * 1000 - millisOnTravelDay(edge, earliestStartTime);
+        if (!reverse) {
+            if (l < 0) l = l + 24*60*60*1000;
+        } else {
+            if (l > 0) l = l - 24*60*60*1000;
+        }
+        return l;
     }
 
     private long millisOnTravelDay(EdgeIteratorState edge, long instant) {
@@ -160,26 +171,23 @@ final class GraphExplorer {
         return flagEncoder.getTransfers(edge.getFlags());
     }
 
-    double getWalkDistance(EdgeIteratorState edge) {
-        GtfsStorage.EdgeType edgeType = flagEncoder.getEdgeType(edge.getFlags());
-        switch (edgeType) {
-            case HIGHWAY:
-                return edge.getDistance();
-            case ENTER_PT:
-            case EXIT_PT:
-                return 10.0;
-            default:
-                return 0.0;
-        }
-    }
-
     EdgeIteratorState getEdgeIteratorState(int edgeId, int adjNode) {
         if (edgeId == -1) {
             throw new RuntimeException();
         }
-        return extraEdges.stream()
-                .filter(edge -> edge.getEdge() == edgeId)
-                .findFirst().orElseGet(() -> graph.getEdgeIteratorState(edgeId, adjNode));
+        for (EdgeIteratorState extraEdge : extraEdges) {
+            if (extraEdge.getEdge() == edgeId) {
+                if (extraEdge.getAdjNode() != adjNode) {
+                    throw new IllegalStateException();
+                }
+                return extraEdge;
+            }
+        }
+        EdgeIteratorState edge = graph.getEdgeIteratorState(edgeId, adjNode);
+        if (edge.getAdjNode() != adjNode) {
+            throw new IllegalStateException();
+        }
+        return edge;
     }
 
     NodeAccess getNodeAccess() {
@@ -202,7 +210,14 @@ final class GraphExplorer {
         @Override
         public boolean test(EdgeIteratorState edgeIterator) {
             final GtfsStorage.EdgeType edgeType = flagEncoder.getEdgeType(edgeIterator.getFlags());
-            if (walkOnly && edgeType != GtfsStorage.EdgeType.HIGHWAY && edgeType != (reverse ? GtfsStorage.EdgeType.EXIT_PT : GtfsStorage.EdgeType.ENTER_PT)) {
+            if (edgeType == GtfsStorage.EdgeType.HIGHWAY) {
+                if (reverse) {
+                    return accessEgressWeighting.getFlagEncoder().isBackward(edgeIterator.getFlags());
+                } else {
+                    return accessEgressWeighting.getFlagEncoder().isForward(edgeIterator.getFlags());
+                }
+            }
+            if (walkOnly && edgeType != (reverse ? GtfsStorage.EdgeType.EXIT_PT : GtfsStorage.EdgeType.ENTER_PT)) {
                 return false;
             }
             if (!isValidOn(edgeIterator, label.currentTime)) {
@@ -210,15 +225,6 @@ final class GraphExplorer {
             }
             if (edgeType == GtfsStorage.EdgeType.WAIT_ARRIVAL && !reverse) {
                 return false;
-            }
-            if (edgeType == GtfsStorage.EdgeType.ENTER_TIME_EXPANDED_NETWORK && !reverse) {
-                if (secondsOnTrafficDay(edgeIterator, label.currentTime) > flagEncoder.getTime(edgeIterator.getFlags())) {
-                    return false;
-                }
-            } else if (edgeType == GtfsStorage.EdgeType.LEAVE_TIME_EXPANDED_NETWORK && reverse) {
-                if (secondsOnTrafficDay(edgeIterator, label.currentTime) < flagEncoder.getTime(edgeIterator.getFlags())) {
-                    return false;
-                }
             }
             return true;
         }
