@@ -6,7 +6,7 @@
     <groupId>com.graphhopper</groupId>
     <artifactId>graphhopper-parent</artifactId>
     <name>GraphHopper Parent Project</name>
-    <version>0.12-SNAPSHOT</version>
+    <version>0.13-SNAPSHOT</version>
     <packaging>pom</packaging>
     <url>https://www.graphhopper.com</url>
     <inceptionYear>2012</inceptionYear>
@@ -155,15 +155,7 @@
             <plugin>
                 <groupId>com.github.spotbugs</groupId>
                 <artifactId>spotbugs-maven-plugin</artifactId>
-                <version>3.1.6</version>
-                <!-- required as 3.1.7 is not yet released for the plugin but we hit problem spotbugs#711 -->
-                <dependencies>
-		    <dependency>
-		      <groupId>com.github.spotbugs</groupId>
-		      <artifactId>spotbugs</artifactId>
-		      <version>3.1.7</version>
-		    </dependency>
-		</dependencies>
+                <version>3.1.11</version>
                 <configuration>
                     <maxRank>4</maxRank>
                     <failOnError>true</failOnError>
