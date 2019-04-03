@@ -32,6 +32,7 @@ import com.graphhopper.util.exceptions.PointOutOfBoundsException;
 import com.graphhopper.util.shapes.GHPoint;
 import io.dropwizard.testing.junit.DropwizardAppRule;
 import org.junit.AfterClass;
+import org.junit.BeforeClass;
 import org.junit.ClassRule;
 import org.junit.Test;
 
@@ -62,9 +63,9 @@ public class RouteResourceTest {
     }
 
     @ClassRule
-    public static final DropwizardAppRule<GraphHopperServerConfiguration> app = new DropwizardAppRule(
-            GraphHopperApplication.class, config);
+    public static final DropwizardAppRule<GraphHopperServerConfiguration> app = new DropwizardAppRule<>(GraphHopperApplication.class, config);
 
+    @BeforeClass
     @AfterClass
     public static void cleanUp() {
         Helper.removeDir(new File(DIR));
@@ -246,7 +247,7 @@ public class RouteResourceTest {
         int firstLink = edgeIds.get(0).get(2).asInt();
         int lastLink = edgeIds.get(edgeIds.size() - 1).get(2).asInt();
         assertEquals(880, firstLink);
-        assertEquals(1420, lastLink);
+        assertEquals(1421, lastLink);
     }
 
     @Test
