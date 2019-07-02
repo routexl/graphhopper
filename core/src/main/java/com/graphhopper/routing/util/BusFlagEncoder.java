@@ -20,7 +20,7 @@ package com.graphhopper.routing.util;
 import com.graphhopper.reader.ReaderRelation;
 import com.graphhopper.reader.ReaderWay;
 import com.graphhopper.routing.profiles.EncodedValue;
-import com.graphhopper.routing.profiles.FactorizedDecimalEncodedValue;
+import com.graphhopper.routing.profiles.UnsignedDecimalEncodedValue;
 import com.graphhopper.storage.IntsRef;
 import com.graphhopper.util.Helper;
 import com.graphhopper.util.PMap;
@@ -29,15 +29,14 @@ import java.util.*;
 
 /**
  * Defines bit layout for bus
- * <p>
  *
  * @author Peter Karich
  * @author Nop
  * @author RouteXL
  */
 public class BusFlagEncoder extends AbstractFlagEncoder {
-    protected final Map<String, Integer> trackTypeSpeedMap = new HashMap<String, Integer>();
-    protected final Set<String> badSurfaceSpeedMap = new HashSet<String>();
+    protected final Map<String, Integer> trackTypeSpeedMap = new HashMap<>();
+    protected final Set<String> badSurfaceSpeedMap = new HashSet<>();
 
     // This value determines the maximal possible on roads with bad surfaces
     protected int badSurfaceSpeed;
@@ -50,7 +49,7 @@ public class BusFlagEncoder extends AbstractFlagEncoder {
      * http://www.itoworld.com/map/124#fullscreen
      * http://wiki.openstreetmap.org/wiki/OSM_tags_for_routing/Maxspeed
      */
-    protected final Map<String, Integer> defaultSpeedMap = new HashMap<String, Integer>();
+    protected final Map<String, Integer> defaultSpeedMap = new HashMap<>();
 
     public BusFlagEncoder() {
         this(5, 5, 0);
@@ -61,6 +60,7 @@ public class BusFlagEncoder extends AbstractFlagEncoder {
                 properties.getDouble("speed_factor", 5),
                 properties.getBool("turn_costs", false) ? 1 : 0);
         this.properties = properties;
+        this.speedTwoDirections = properties.getBool("speed_two_directions", false);
         this.setBlockFords(properties.getBool("block_fords", true));
         this.setBlockByDefault(properties.getBool("block_barriers", true));        
     }
@@ -122,24 +122,24 @@ public class BusFlagEncoder extends AbstractFlagEncoder {
         defaultSpeedMap.put("primary_link", 50);
         // linking towns + villages
         defaultSpeedMap.put("secondary", 45);
-        defaultSpeedMap.put("secondary_link", 45);
+        defaultSpeedMap.put("secondary_link", 35);
         // streets without middle line separation
         defaultSpeedMap.put("tertiary", 40);
         defaultSpeedMap.put("tertiary_link", 30);
-        defaultSpeedMap.put("unclassified", 25);
-        defaultSpeedMap.put("residential", 25);
+        defaultSpeedMap.put("unclassified", 20);
+        defaultSpeedMap.put("residential", 20);
         // spielstraße
         defaultSpeedMap.put("living_street", 5);
-        defaultSpeedMap.put("service", 20);
+        defaultSpeedMap.put("service", 10);
         // unknown road
         defaultSpeedMap.put("road", 10);
         // forestry stuff
         defaultSpeedMap.put("track", 10);
         
         // limit speed on bad surfaces to 30 km/h
-        badSurfaceSpeed = 30;
+        badSurfaceSpeed = 25;
         destinationSpeed = 5;
-        maxPossibleSpeed = 140;
+        maxPossibleSpeed = 100;
         speedDefault = defaultSpeedMap.get("secondary");
 
         init();
@@ -157,7 +157,7 @@ public class BusFlagEncoder extends AbstractFlagEncoder {
     public void createEncodedValues(List<EncodedValue> registerNewEncodedValue, String prefix, int index) {
         // first two bits are reserved for route handling in superclass
         super.createEncodedValues(registerNewEncodedValue, prefix, index);
-        registerNewEncodedValue.add(speedEncoder = new FactorizedDecimalEncodedValue(prefix + "average_speed", speedBits, speedFactor, speedTwoDirections));
+        registerNewEncodedValue.add(speedEncoder = new UnsignedDecimalEncodedValue(EncodingManager.getKey(prefix, "average_speed"), speedBits, speedFactor, speedTwoDirections));
     }
 
     protected double getSpeed(ReaderWay way) {
@@ -247,7 +247,8 @@ public class BusFlagEncoder extends AbstractFlagEncoder {
             speed = applyBadSurfaceSpeed(way, speed);
 
             setSpeed(false, edgeFlags, speed);
-            setSpeed(true, edgeFlags, speed);
+            if (speedTwoDirections)
+            	setSpeed(true, edgeFlags, speed);
 
             boolean isRoundabout = roundaboutEnc.getBool(false, edgeFlags);
             if (isOneway(way) || isRoundabout) {
@@ -265,14 +266,16 @@ public class BusFlagEncoder extends AbstractFlagEncoder {
             accessEnc.setBool(false, edgeFlags, true);
             accessEnc.setBool(true, edgeFlags, true);
             setSpeed(false, edgeFlags, ferrySpeed);
-            setSpeed(true, edgeFlags, ferrySpeed);
+            if (speedTwoDirections)
+            	setSpeed(true, edgeFlags, ferrySpeed);
         }
 
         for (String restriction : restrictions) {
             if (way.hasTag(restriction, "destination")) {
                 // This is problematic as Speed != Time
                 setSpeed(false, edgeFlags, destinationSpeed);
-                setSpeed(true, edgeFlags, destinationSpeed);
+                if (speedTwoDirections)
+                	setSpeed(true, edgeFlags, destinationSpeed);
             }
         }
         return edgeFlags;

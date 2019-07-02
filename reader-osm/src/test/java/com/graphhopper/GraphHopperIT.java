@@ -20,6 +20,8 @@ package com.graphhopper;
 import com.graphhopper.reader.dem.SRTMProvider;
 import com.graphhopper.reader.osm.GraphHopperOSM;
 import com.graphhopper.routing.ch.CHAlgoFactoryDecorator;
+import com.graphhopper.routing.util.CarFlagEncoder;
+import com.graphhopper.routing.util.DefaultFlagEncoderFactory;
 import com.graphhopper.routing.util.EncodingManager;
 import com.graphhopper.util.*;
 import com.graphhopper.util.Parameters.CH;
@@ -271,7 +273,7 @@ public class GraphHopperIT {
                 setOSMFile(DIR + "/north-bayreuth.osm.gz").
                 setCHEnabled(false).
                 setGraphHopperLocation(tmpGraphFile).
-                setEncodingManager(EncodingManager.create("car,generic", 8));
+                setEncodingManager(GHUtility.addDefaultEncodedValues(new EncodingManager.Builder(8)).addAll(new DefaultFlagEncoderFactory(), "car,generic").build());
         tmpHopper.importOrLoad();
 
         GHRequest req = new GHRequest(49.985307, 11.50628, 49.985731, 11.507465).
@@ -290,16 +292,15 @@ public class GraphHopperIT {
     }
 
     @Test
-    public void testNorthBayreuthBlockeEdges() {
+    public void testNorthBayreuthBlockedEdges() {
         GraphHopper tmpHopper = new GraphHopperOSM().
                 setOSMFile(DIR + "/north-bayreuth.osm.gz").
                 setCHEnabled(false).
                 setGraphHopperLocation(tmpGraphFile).
-                setEncodingManager(EncodingManager.create("generic,car", 8));
+                setEncodingManager(GHUtility.addDefaultEncodedValues(new EncodingManager.Builder(8)).add(new CarFlagEncoder()).build());
         tmpHopper.importOrLoad();
 
-        GHRequest req = new GHRequest(49.985272, 11.506151, 49.986107, 11.507202).
-                setVehicle("generic").setWeighting("generic");
+        GHRequest req = new GHRequest(49.985272, 11.506151, 49.986107, 11.507202);
 
         GHResponse rsp = tmpHopper.route(req);
         assertFalse(rsp.getErrors().toString(), rsp.hasErrors());
@@ -312,7 +313,7 @@ public class GraphHopperIT {
         assertEquals(365, rsp.getBest().getDistance(), 1);
 
         req = new GHRequest(49.975845, 11.522598, 50.026821, 11.497364).
-                setVehicle("generic").setWeighting("generic");
+                setWeighting("fastest");
 
         rsp = tmpHopper.route(req);
         assertFalse(rsp.getErrors().toString(), rsp.hasErrors());
@@ -329,7 +330,7 @@ public class GraphHopperIT {
         req.getHints().put(Routing.BLOCK_AREA, "50.017578,11.547527;" + someArea);
         rsp = tmpHopper.route(req);
         assertFalse(rsp.getErrors().toString(), rsp.hasErrors());
-        assertEquals(16674, rsp.getBest().getDistance(), 1);
+        assertEquals(12787, rsp.getBest().getDistance(), 1);
 
         // block by edge IDs -> i.e. use small circular area
         req.getHints().put(Routing.BLOCK_AREA, "49.981599,11.517448,100");
@@ -438,14 +439,14 @@ public class GraphHopperIT {
         request.addPoint(new GHPoint(43.74958, 7.436566));
         request.addPoint(new GHPoint(43.727687, 7.418737));
         request.setAlgorithm(ASTAR).setVehicle(vehicle).setWeighting(weightCalcStr);
-        request.setPathDetails(Arrays.asList(Parameters.DETAILS.AVERAGE_SPEED));
+        request.setPathDetails(Arrays.asList(Parameters.Details.AVERAGE_SPEED));
 
         GHResponse rsp = hopper.route(request);
 
         PathWrapper arsp = rsp.getBest();
         Map<String, List<PathDetail>> details = arsp.getPathDetails();
         assertTrue(details.size() == 1);
-        List<PathDetail> detailList = details.get(Parameters.DETAILS.AVERAGE_SPEED);
+        List<PathDetail> detailList = details.get(Parameters.Details.AVERAGE_SPEED);
         assertEquals(1, detailList.size());
         assertEquals(5.0, detailList.get(0).getValue());
         assertEquals(0, detailList.get(0).getFirst());
@@ -615,7 +616,7 @@ public class GraphHopperIT {
     }
 
     @Test
-    public void testSRTMWithoutTunnelInterpolation() throws Exception {
+    public void testSRTMWithoutTunnelInterpolation() {
         GraphHopper tmpHopper = new GraphHopperOSM().setOSMFile(osmFile).setStoreOnFlush(true)
                 .setCHEnabled(false).setGraphHopperLocation(tmpGraphFile)
                 .setEncodingManager(EncodingManager.create(importVehicles, 8));
@@ -644,7 +645,7 @@ public class GraphHopperIT {
     public void testSRTMWithTunnelInterpolation() {
         GraphHopper tmpHopper = new GraphHopperOSM().setOSMFile(osmFile).setStoreOnFlush(true)
                 .setCHEnabled(false).setGraphHopperLocation(tmpGraphFile)
-                .setEncodingManager(EncodingManager.create(genericImportVehicles, 8));
+                .setEncodingManager(GHUtility.addDefaultEncodedValues(new EncodingManager.Builder(8)).addAll(new DefaultFlagEncoderFactory(), genericImportVehicles).build());
 
         tmpHopper.setElevationProvider(new SRTMProvider(DIR));
         tmpHopper.importOrLoad();
@@ -654,7 +655,7 @@ public class GraphHopperIT {
                 .setVehicle(vehicle).setWeighting(weightCalcStr));
         PathWrapper arsp = rsp.getBest();
         // Without interpolation: 356.5
-        assertEquals(350.9, arsp.getDistance(), .1);
+        assertEquals(351, arsp.getDistance(), .1);
         PointList pointList = arsp.getPoints();
         assertEquals(6, pointList.getSize());
         assertTrue(pointList.is3D());
@@ -903,7 +904,7 @@ public class GraphHopperIT {
                         addPoint(new GHPoint(49.984565, 11.499188)).
                         addPoint(new GHPoint(49.9847, 11.499612)).
                         setVehicle("car").setWeighting("fastest").
-                        setPathDetails(Arrays.asList(Parameters.DETAILS.AVERAGE_SPEED));
+                        setPathDetails(Arrays.asList(Parameters.Details.AVERAGE_SPEED));
 
         GHResponse rsp = tmpHopper.route(req);
 
@@ -923,7 +924,7 @@ public class GraphHopperIT {
                 addPoint(new GHPoint(49.984352, 11.498802)).
                 addPoint(new GHPoint(49.984352, 11.498802)).
                 setVehicle("car").setWeighting("fastest").
-                setPathDetails(Arrays.asList(Parameters.DETAILS.AVERAGE_SPEED));
+                setPathDetails(Arrays.asList(Parameters.Details.AVERAGE_SPEED));
 
         GHResponse rsp = tmpHopper.route(req);
 
