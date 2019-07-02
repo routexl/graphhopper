@@ -21,6 +21,17 @@ To get started, read through our documentation and install the GraphHopper Web S
  * 0.8.2: [announcement](https://www.graphhopper.com/blog/2016/10/18/graphhopper-routing-engine-0-8-released/), [documentation](https://github.com/graphhopper/graphhopper/blob/0.8/docs/index.md), [web service zip](https://graphhopper.com/public/releases/graphhopper-web-0.8.2-bin.zip), [Android APK](https://graphhopper.com/public/releases/graphhopper-android-0.8.2.apk)
  * 0.7.0: [announcement](https://www.graphhopper.com/blog/2016/06/15/graphhopper-routing-engine-0-7-released/), [documentation](https://github.com/graphhopper/graphhopper/blob/0.7/docs/index.md), [web service zip](https://graphhopper.com/public/releases/graphhopper-web-0.7.0-bin.zip), [Android APK](https://graphhopper.com/public/releases/graphhopper-android-0.7.0.apk)
 
+### Docker
+
+Run a dockerized GraphHopper from sources:
+
+```bash
+docker build -t graphhopper:master .
+docker run -d --name graphhopper -v <path_data_directory>/data:/data -p 8989:8989 graphhopper:master
+```
+
+See also the builds at [Docker Hub](https://hub.docker.com/r/graphhopper/graphhopper)
+
 ### DEB or RPM package
 
 [There is an experimental step by step guide](https://github.com/graphhopper/graphhopper/issues/561#issuecomment-473567727) that creates a debian or rpm package from the cloned and compiled repository. Before we can recommend this we need some more testers and feedback :)
@@ -67,9 +78,12 @@ There is the isochrone subproject to calculate and visualize the reachable area 
 
 [![Isochrone API image](./docs/isochrone/images/isochrone.png)](./docs/web/api-doc.md#isochrone)
 
-**[Isochrone Experiments](//www.graphhopper.com/blog/2018/07/04/high-precision-reachability/)**
+**[Shortest Path Tree API](//www.graphhopper.com/blog/2018/07/04/high-precision-reachability/)**
 
 [![high precision reachability image](https://www.graphhopper.com/wp-content/uploads/2018/06/berlin-reachability-768x401.png)](https://www.graphhopper.com/blog/2018/07/04/high-precision-reachability/)
+
+To support these high precision reachability approaches there is a special /spt
+endpoint (shortest path tree). [See #1577](https://github.com/graphhopper/graphhopper/pull/1577)
 
 # Technical Overview
 
@@ -162,23 +176,6 @@ E.g. you could use the rough user interface called MiniGraphUI provided in the t
 visualizations done with it [here](https://graphhopper.com/blog/2016/01/19/alternative-roads-to-rome/).
 A fast and production ready map visualization for the Desktop can be easily implemented via mapsforge.
 
-### Docker
-
-Install GraphHopper via [Docker](https://github.com/graphhopper/graphhopper/pull/849).
-You only need to change the docker-compose.yml entrypoint in core/files/ to run whatever map you like.
-Then just type:
-```bash
-cd core/files/
-docker-compose up -d
-```
-
-If you don't want to use docker-compose you can do the following:
-```bash
-docker build -t graphhopper:master .
-docker run -d --name graphhopper -v <path_data_directory>/data:/data -p 8989:8989 graphhopper:master
-```
-
-
 # Features
 
 Here is a list of the more detailed features including a link to the documentation:
@@ -205,3 +202,4 @@ Here is a list of the more detailed features including a link to the documentati
  * Do [map matching](https://github.com/graphhopper/map-matching) with GraphHopper
  * Calculate [isochrones](./docs/web/api-doc.md#isochrone) with GraphHopper
  * Show path details [#1142](https://github.com/graphhopper/graphhopper/pull/1142)
+ * GraphHopper can produce vector tiles for debugging purposes [#1572](https://github.com/graphhopper/graphhopper/pull/1572)

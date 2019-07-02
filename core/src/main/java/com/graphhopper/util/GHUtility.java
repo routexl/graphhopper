@@ -21,11 +21,13 @@ import com.carrotsearch.hppc.IntIndexedContainer;
 import com.graphhopper.coll.GHBitSet;
 import com.graphhopper.coll.GHBitSetImpl;
 import com.graphhopper.coll.GHIntArrayList;
+import com.graphhopper.coll.GHTBitSet;
 import com.graphhopper.routing.profiles.BooleanEncodedValue;
 import com.graphhopper.routing.profiles.DecimalEncodedValue;
 import com.graphhopper.routing.profiles.EnumEncodedValue;
 import com.graphhopper.routing.profiles.IntEncodedValue;
 import com.graphhopper.routing.util.*;
+import com.graphhopper.routing.util.parsers.*;
 import com.graphhopper.storage.*;
 import com.graphhopper.util.shapes.BBox;
 import org.slf4j.Logger;
@@ -206,7 +208,8 @@ public class GHUtility {
             double bwdSpeed = 10 + random.nextDouble() * 120;
             if (randomSpeedEnc != null) {
                 edge.set(randomSpeedEnc, fwdSpeed);
-                edge.setReverse(randomSpeedEnc, bwdSpeed);
+                if (randomSpeedEnc.isStoreTwoDirections())
+                    edge.setReverse(randomSpeedEnc, bwdSpeed);
             }
             numEdges++;
         }
@@ -257,6 +260,11 @@ public class GHUtility {
     public static void printInfo(final Graph g, int startNode, final int counts, final EdgeFilter filter) {
         new BreadthFirstSearch() {
             int counter = 0;
+
+            @Override
+            protected GHBitSet createBitSet() {
+                return new GHTBitSet();
+            }
 
             @Override
             protected boolean goFurther(int nodeId) {
@@ -412,6 +420,11 @@ public class GHUtility {
     }
 
     public static EdgeIteratorState createMockedEdgeIteratorState(final double distance, final IntsRef flags) {
+        return createMockedEdgeIteratorState(distance, flags, 0, 1, 2, 3, 4);
+    }
+
+    public static EdgeIteratorState createMockedEdgeIteratorState(final double distance, final IntsRef flags,
+                                                                  final int base, final int adj, final int edge, final int origFirst, final int origLast) {
         return new GHUtility.DisabledEdgeIterator() {
             @Override
             public double getDistance() {
@@ -441,6 +454,46 @@ public class GHUtility {
             @Override
             public double getReverse(DecimalEncodedValue property) {
                 return property.getDecimal(true, flags);
+            }
+
+            @Override
+            public <T extends Enum> T get(EnumEncodedValue<T> property) {
+                return property.getEnum(false, flags);
+            }
+
+            @Override
+            public <T extends Enum> T getReverse(EnumEncodedValue<T> property) {
+                return property.getEnum(true, flags);
+            }
+
+            @Override
+            public int getEdge() {
+                return edge;
+            }
+
+            @Override
+            public int getBaseNode() {
+                return base;
+            }
+
+            @Override
+            public int getAdjNode() {
+                return adj;
+            }
+
+            @Override
+            public PointList fetchWayGeometry(int type) {
+                return Helper.createPointList(0, 2, 6, 4);
+            }
+
+            @Override
+            public int getOrigEdgeFirst() {
+                return origFirst;
+            }
+
+            @Override
+            public int getOrigEdgeLast() {
+                return origLast;
             }
         };
     }
@@ -541,9 +594,15 @@ public class GHUtility {
         edge.set(accessEnc, fwd).setReverse(accessEnc, bwd);
         if (fwd)
             edge.set(avSpeedEnc, averageSpeed);
-        if (bwd)
+        if (bwd && avSpeedEnc.isStoreTwoDirections())
             edge.setReverse(avSpeedEnc, averageSpeed);
         return edge;
+    }
+
+    public static final EncodingManager.Builder addDefaultEncodedValues(EncodingManager.Builder builder) {
+        return builder.add(new OSMRoadClassParser()).add(new OSMRoadClassLinkParser()).
+                add(new OSMRoadEnvironmentParser()).add(new OSMMaxSpeedParser()).add(new OSMRoadAccessParser()).
+                add(new OSMSurfaceParser());
     }
 
     /**

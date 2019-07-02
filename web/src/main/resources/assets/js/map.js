@@ -135,7 +135,10 @@ function initMap(bounds, setStartCoord, setIntermediateCoord, setEndCoord, selec
 
     new L.Control.loading().addTo(map);
 
-    L.control.layers(tileLayers.getAvailableTileLayers()/*, overlays*/).addTo(map);
+    if(tileLayers.getOverlays())
+        L.control.layers(tileLayers.getAvailableTileLayers(), tileLayers.getOverlays()).addTo(map);
+    else
+        L.control.layers(tileLayers.getAvailableTileLayers()).addTo(map);
 
     map.on('baselayerchange', function (a) {
         if (a.name) {
@@ -264,6 +267,12 @@ module.exports.initMap = initMap;
 module.exports.adjustMapSize = adjustMapSize;
 
 module.exports.addElevation = function (geoJsonFeature, useMiles, details) {
+
+    // Don't show the elevation graph on small displays
+    if(window.innerWidth < 900 || window.innerHeight < 400){
+        return;
+    }
+
     // TODO no option to switch to miles yet
     var options = {
        width: 600,
