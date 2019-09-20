@@ -17,6 +17,7 @@
  */
 package com.graphhopper.routing.util;
 
+import com.graphhopper.reader.OSMTurnRelation;
 import com.graphhopper.reader.ReaderNode;
 import com.graphhopper.reader.ReaderRelation;
 import com.graphhopper.reader.ReaderWay;
@@ -124,8 +125,6 @@ public class EncodingManager implements EncodedValueLookup {
             throw new IllegalStateException("Cannot load properties to fetch EncodingManager configuration at: "
                     + dir.getLocation());
 
-        // check encoding for compatibility
-        properties.checkVersions(false);
         int bytesForFlags = 4;
         try {
             bytesForFlags = Integer.parseInt(properties.get("graph.bytes_for_flags"));
@@ -143,7 +142,6 @@ public class EncodingManager implements EncodedValueLookup {
         if (Helper.isEmpty(flagEncoderValuesStr) && Helper.isEmpty(encodedValuesStr))
             throw new IllegalStateException("EncodingManager was not configured. And no one was found in the graph: "
                     + dir.getLocation());
-
 
         return builder.build();
     }
@@ -289,14 +287,7 @@ public class EncodingManager implements EncodedValueLookup {
                 entry = entry.split("\\|")[0];
             }
             PMap configuration = new PMap(entryVal);
-
-            FlagEncoder fe = factory.createFlagEncoder(entry, configuration);
-
-            if (configuration.has("version") && fe.getVersion() != configuration.getInt("version", -1))
-                throw new IllegalArgumentException("Encoder " + entry + " was used in version "
-                        + configuration.getLong("version", -1) + ", but current version is " + fe.getVersion());
-
-            resultEncoders.add(fe);
+            resultEncoders.add(factory.createFlagEncoder(entry, configuration));
         }
         return resultEncoders;
     }
@@ -315,11 +306,6 @@ public class EncodingManager implements EncodedValueLookup {
             PMap map = new PMap(entry);
             if (!map.has("version"))
                 throw new IllegalArgumentException("encoded value must have a version specified but it was " + entry);
-
-            int version = map.getInt("version", Integer.MIN_VALUE);
-            int stored = evObject.getVersion();
-            if (stored != version)
-                throw new IllegalArgumentException("Version of EncodedValue " + evObject + " does not match " + entry + ". Stored " + stored + " vs. in code " + version);
         }
     }
 
