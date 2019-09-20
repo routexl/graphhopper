@@ -104,15 +104,9 @@ public abstract class ReaderElement {
             if (key.startsWith(keyPrefix)) {
                 nbMatchedKeys++;
                 matchedKey = key;
-                if (nbMatchedKeys > 1) {
-                    throw new IllegalArgumentException("Several matched keys found for keyPrefix " + keyPrefix);
-                }
             }
         }
-        if (nbMatchedKeys == 1) {
-            return matchedKey;
-        }
-        return null;
+        return matchedKey;
     }
 
     public void setTag(String name, Object value) {
