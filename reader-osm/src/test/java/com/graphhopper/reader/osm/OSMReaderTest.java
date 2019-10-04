@@ -67,6 +67,7 @@ public class OSMReaderTest {
     private final String fileTurnRestrictions = "test-restrictions.xml";
     private final String fileRoadAttributes = "test-road-attributes.xml";
     private final String fileConditionalTurnRestrictions = "test-conditional-turn-restrictions.xml";
+    private final String fileMultipleConditionalTurnRestrictions = "test-multiple-conditional-turn-restrictions.xml";
     private final String dir = "./target/tmp/test-db";
     private CarFlagEncoder carEncoder;
     private BooleanEncodedValue carAccessEnc;
@@ -562,7 +563,7 @@ public class OSMReaderTest {
     public void testRoadAttributes() {
         GraphHopper hopper = new GraphHopperFacade(fileRoadAttributes);
         DataFlagEncoder dataFlagEncoder = new DataFlagEncoder();
-        hopper.setEncodingManager(GHUtility.addDefaultEncodedValues(new EncodingManager.Builder(8)).
+        hopper.setEncodingManager(GHUtility.addDefaultEncodedValues(new EncodingManager.Builder()).
                 add(new OSMMaxWidthParser()).add(new OSMMaxHeightParser()).add(new OSMMaxWeightParser()).
                 add(dataFlagEncoder).build());
         hopper.importOrLoad();
@@ -732,7 +733,7 @@ public class OSMReaderTest {
         CarFlagEncoder car = new CarFlagEncoder(5, 5, 24);
         FootFlagEncoder foot = new FootFlagEncoder();
         BikeFlagEncoder bike = new BikeFlagEncoder(4, 2, 24);
-        EncodingManager manager = EncodingManager.create(Arrays.asList(bike, foot, car), 4);
+        EncodingManager manager = EncodingManager.create(Arrays.asList(bike, foot, car));
 
         GraphHopperStorage ghStorage = new GraphBuilder(manager).create();
         OSMReader reader = new OSMReader(ghStorage) {
@@ -865,6 +866,45 @@ public class OSMReaderTest {
     }
 
     @Test
+    public void testMultipleTurnRestrictions() {
+        GraphHopper hopper = new GraphHopperFacade(fileMultipleConditionalTurnRestrictions, true, "").
+                importOrLoad();
+
+        Graph graph = hopper.getGraphHopperStorage();
+        assertEquals(5, graph.getNodes());
+        assertTrue(graph.getExtension() instanceof TurnCostExtension);
+        TurnCostExtension tcStorage = (TurnCostExtension) graph.getExtension();
+
+        int n1 = AbstractGraphStorageTester.getIdOf(graph, 50, 10);
+        int n2 = AbstractGraphStorageTester.getIdOf(graph, 52, 10);
+        int n3 = AbstractGraphStorageTester.getIdOf(graph, 52, 11);
+        int n4 = AbstractGraphStorageTester.getIdOf(graph, 52, 12);
+        int n5 = AbstractGraphStorageTester.getIdOf(graph, 50, 12);
+
+        int edge1_2 = GHUtility.getEdge(graph, n1, n2).getEdge();
+        int edge2_3 = GHUtility.getEdge(graph, n2, n3).getEdge();
+        int edge3_4 = GHUtility.getEdge(graph, n3, n4).getEdge();
+        int edge4_5 = GHUtility.getEdge(graph, n4, n5).getEdge();
+        int edge5_1 = GHUtility.getEdge(graph, n5, n1).getEdge();
+
+        // (1-2)->(2-3) no_right_turn for motorcar and bus
+        assertTrue(carEncoder.isTurnRestricted(tcStorage.getTurnCostFlags(edge1_2, n2, edge2_3)));
+        assertFalse(bikeEncoder.isTurnRestricted(tcStorage.getTurnCostFlags(edge1_2, n2, edge2_3)));
+
+        // (3-4)->(4-5) no_right_turn for motorcycle and motorcar
+        assertTrue(carEncoder.isTurnRestricted(tcStorage.getTurnCostFlags(edge3_4, n4, edge4_5)));
+        assertFalse(bikeEncoder.isTurnRestricted(tcStorage.getTurnCostFlags(edge3_4, n4, edge4_5)));
+
+        // (5-1)->(1-2) no_right_turn for bus and psv except for motorcar and bicycle
+        assertFalse(carEncoder.isTurnRestricted(tcStorage.getTurnCostFlags(edge4_5, n5, edge5_1)));
+        assertFalse(bikeEncoder.isTurnRestricted(tcStorage.getTurnCostFlags(edge4_5, n5, edge5_1)));
+
+        // (5-1)->(1-2) no_right_turn for motorcar and motorcycle except for bus and bicycle
+        assertTrue(carEncoder.isTurnRestricted(tcStorage.getTurnCostFlags(edge5_1, n1, edge1_2)));
+        assertFalse(bikeEncoder.isTurnRestricted(tcStorage.getTurnCostFlags(edge5_1, n1, edge1_2)));
+    }
+
+    @Test
     public void testPreferredLanguage() {
         GraphHopper hopper = new GraphHopperFacade(file1, false, "de").importOrLoad();
         GraphHopperStorage graph = hopper.getGraphHopperStorage();
@@ -936,7 +976,7 @@ public class OSMReaderTest {
                     throw new RuntimeException(e);
                 }
             }
-        }.setEncodingManager(new EncodingManager.Builder(4).add(carEncoder = new CarFlagEncoder()).add(new OSMRoadClassParser()).build()).
+        }.setEncodingManager(new EncodingManager.Builder().add(carEncoder = new CarFlagEncoder()).add(new OSMRoadClassParser()).build()).
                 setGraphHopperLocation(dir).setCHEnabled(false).
                 importOrLoad();
 
@@ -970,7 +1010,7 @@ public class OSMReaderTest {
             }
 
             footEncoder = new FootFlagEncoder();
-            setEncodingManager(new EncodingManager.Builder(4).add(footEncoder).add(carEncoder).add(bikeEncoder).
+            setEncodingManager(new EncodingManager.Builder().add(footEncoder).add(carEncoder).add(bikeEncoder).
                     setPreferredLanguage(prefLang).build());
             carAccessEnc = carEncoder.getAccessEnc();
         }

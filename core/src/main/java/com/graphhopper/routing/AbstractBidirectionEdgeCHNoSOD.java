@@ -44,11 +44,13 @@ public abstract class AbstractBidirectionEdgeCHNoSOD extends AbstractBidirAlgo {
     public AbstractBidirectionEdgeCHNoSOD(Graph graph, TurnWeighting weighting) {
         super(graph, weighting, TraversalMode.EDGE_BASED);
         this.turnWeighting = weighting;
+        // the inner explorers will run on the base- (or query/base-)graph edges only
+        Graph baseGraph = graph.getBaseGraph();
         // we need extra edge explorers, because they get called inside a loop that already iterates over edges
-        // important: we have to use different filter ids, otherwise this will not work with QueryGraph's edge explorer
-        // cache, see #1623.
-        innerInExplorer = graph.createEdgeExplorer(DefaultEdgeFilter.inEdges(flagEncoder).setFilterId(1));
-        innerOutExplorer = graph.createEdgeExplorer(DefaultEdgeFilter.outEdges(flagEncoder).setFilterId(1));
+        // important: we have to use different filter ids for the edge explorers here than we use for the edge
+        // explorers in the superclass, otherwise this will not work with QueryGraph's edge explorer cache, see #1623.
+        innerInExplorer = baseGraph.createEdgeExplorer(DefaultEdgeFilter.inEdges(flagEncoder).setFilterId(1));
+        innerOutExplorer = baseGraph.createEdgeExplorer(DefaultEdgeFilter.outEdges(flagEncoder).setFilterId(1));
     }
 
     @Override
@@ -114,7 +116,6 @@ public abstract class AbstractBidirectionEdgeCHNoSOD extends AbstractBidirAlgo {
             }
         }
 
-        // todo: it would be sufficient (and maybe more efficient) to use an original edge explorer here ?
         EdgeIterator iter = reverse ?
                 innerInExplorer.setBaseNode(edgeState.getAdjNode()) :
                 innerOutExplorer.setBaseNode(edgeState.getAdjNode());
@@ -124,7 +125,7 @@ public abstract class AbstractBidirectionEdgeCHNoSOD extends AbstractBidirAlgo {
         while (iter.next()) {
             final int edgeId = getOrigEdgeId(iter, !reverse);
             final int prevOrNextOrigEdgeId = getOrigEdgeId(edgeState, reverse);
-            int key = GHUtility.getEdgeKey(graph, edgeId, iter.getBaseNode(), !reverse);
+            int key = GHUtility.createEdgeKey(graph.getOtherNode(edgeId, iter.getBaseNode()), iter.getBaseNode(), edgeId, !reverse);
             SPTEntry entryOther = bestWeightMapOther.get(key);
             if (entryOther == null) {
                 continue;

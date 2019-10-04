@@ -37,6 +37,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
+import static org.assertj.core.util.Lists.emptyList;
 import static org.hamcrest.collection.IsEmptyIterable.emptyIterable;
 import static org.hamcrest.collection.IsIterableContainingInOrder.contains;
 import static org.hamcrest.core.StringContains.containsString;
@@ -52,7 +53,7 @@ public class GraphExplorerTest {
     public GraphExplorerTest() {
         pt = new PtFlagEncoder();
         foot = new FootFlagEncoder();
-        encodingManager = EncodingManager.create(Arrays.asList(pt, foot), 8);
+        encodingManager = EncodingManager.create(Arrays.asList(pt, foot));
     }
 
     @Test
@@ -67,8 +68,7 @@ public class GraphExplorerTest {
         RealtimeFeed realtimeFeed = mock(RealtimeFeed.class);
         List<VirtualEdgeIteratorState> extraEdges = new ArrayList<>();
 
-        QueryGraph queryGraph = new QueryGraph(graph);
-        queryGraph.lookup(Collections.emptyList());
+        QueryGraph queryGraph = QueryGraph.lookup(graph, Collections.emptyList());
         GraphExplorer testee = new GraphExplorer(queryGraph, new FastestWeighting(foot), pt, gtfsStorage, realtimeFeed, false, false, 5.0);
 
         assertThat(() -> testee.exploreEdgesAround(new Label(0, -1, 4, 0, 0, 0.0, 0L, 0, 0, false, null)).map(Object::toString).iterator(),
@@ -93,8 +93,7 @@ public class GraphExplorerTest {
         extraEdges.add(g);
 
         WrapperGraph wrapperGraph = new WrapperGraph(graph, extraEdges);
-        QueryGraph queryGraph = new QueryGraph(wrapperGraph);
-        queryGraph.lookup(Collections.emptyList());
+        QueryGraph queryGraph = QueryGraph.lookup(wrapperGraph, Collections.emptyList());
         GraphExplorer testee = new GraphExplorer(queryGraph, new FastestWeighting(foot), pt, gtfsStorage, realtimeFeed, false, false, 5.0);
         assertThat(() -> testee.exploreEdgesAround(new Label(0, -1, 0, 0, 0, 0.0, 0L, 0, 0, false, null)).map(Object::toString).iterator(),
                 contains(e.toString()));
@@ -129,8 +128,7 @@ public class GraphExplorerTest {
         extraEdges.add(h);
 
         WrapperGraph wrapperGraph = new WrapperGraph(graph, extraEdges);
-        QueryGraph queryGraph = new QueryGraph(wrapperGraph);
-        queryGraph.lookup(Collections.emptyList());
+        QueryGraph queryGraph = QueryGraph.lookup(wrapperGraph, emptyList());
         GraphExplorer forward = new GraphExplorer(queryGraph, new FastestWeighting(foot), pt, gtfsStorage, realtimeFeed, false, false, 5.0);
         assertThat(() -> forward.exploreEdgesAround(new Label(0, -1, 0, 0, 0, 0.0, 0L, 0, 0, false, null)).map(Object::toString).iterator(),
                 contains("0->1"));
@@ -181,7 +179,6 @@ public class GraphExplorerTest {
         extraEdges.add(h);
 
         WrapperGraph wrapperGraph = new WrapperGraph(graph, extraEdges);
-        QueryGraph queryGraph = new QueryGraph(wrapperGraph);
 
         QueryResult point1 = new QueryResult(3.5, 3.5);
         QueryResult point2 = new QueryResult(4.5, 4.5);
@@ -195,7 +192,7 @@ public class GraphExplorerTest {
         point2.setWayIndex(0);
         point2.setSnappedPosition(QueryResult.Position.EDGE);
         point2.calcSnappedPoint(new DistanceCalc2D());
-        queryGraph.lookup(point1, point2);
+        QueryGraph queryGraph = QueryGraph.lookup(wrapperGraph, Arrays.asList(point1, point2));
 
         GraphExplorer testee = new GraphExplorer(queryGraph, new FastestWeighting(foot), pt, gtfsStorage, realtimeFeed, false, false, 5.0);
         assertThat(() -> testee.exploreEdgesAround(new Label(0, -1, 0, 0, 0, 0.0, 0L, 0, 0, false, null)).map(Object::toString).iterator(),
