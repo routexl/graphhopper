@@ -17,13 +17,8 @@
  */
 package com.graphhopper.reader;
 
-import com.graphhopper.util.Helper;
-
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.Map.Entry;
-import java.util.Set;
 
 /**
  * Base class for all network objects
@@ -97,16 +92,14 @@ public abstract class ReaderElement {
         return val;
     }
 
-    public String getKeyStartsWith(String keyPrefix) {
-        int nbMatchedKeys = 0;
-        String matchedKey = null;
+    public List<String> getKeysWithPrefix(String keyPrefix) {
+        List<String> keys = new ArrayList<>();
         for (String key : properties.keySet()) {
             if (key.startsWith(keyPrefix)) {
-                nbMatchedKeys++;
-                matchedKey = key;
+                keys.add(key);
             }
         }
-        return matchedKey;
+        return keys;
     }
 
     public void setTag(String name, Object value) {
@@ -159,7 +152,7 @@ public abstract class ReaderElement {
         return false;
     }
 
-    public boolean hasTagStartsWith(String keyPrefix) {
+    public boolean hasTagWithKeyPrefix(String keyPrefix) {
         for (String key : properties.keySet()) {
             if (key.startsWith(keyPrefix)) {
                 return true;

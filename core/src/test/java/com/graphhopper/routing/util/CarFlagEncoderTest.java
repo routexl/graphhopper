@@ -17,7 +17,6 @@
  */
 package com.graphhopper.routing.util;
 
-import com.graphhopper.reader.OSMTurnRelation;
 import com.graphhopper.reader.ReaderNode;
 import com.graphhopper.reader.ReaderWay;
 import com.graphhopper.routing.profiles.*;
@@ -39,7 +38,7 @@ import static org.junit.Assert.*;
  */
 public class CarFlagEncoderTest {
     private final EncodingManager em = EncodingManager.create(Arrays.asList(new CarFlagEncoder(new PMap("speed_two_directions=true")),
-            new BikeFlagEncoder(), new FootFlagEncoder()), 8);
+            new BikeFlagEncoder(), new FootFlagEncoder()));
     private final CarFlagEncoder encoder = (CarFlagEncoder) em.getEncoder("car");
     private final BooleanEncodedValue roundaboutEnc = em.getBooleanEncodedValue(Roundabout.KEY);
     private final DecimalEncodedValue avSpeedEnc = encoder.getAverageSpeedEnc();
@@ -651,35 +650,5 @@ public class CarFlagEncoderTest {
         lowFactorCar.createEncodedValues(list, "car", 0);
         assertEquals(2.5, encoder.getFerrySpeed(way), .1);
         assertEquals(.5, lowFactorCar.getFerrySpeed(way), .1);
-    }
-
-    @Test
-    public void testAcceptsTurnRelation() {
-        List<String> vehicleTypesExcept = new ArrayList<>();
-        OSMTurnRelation osmTurnRelation = new OSMTurnRelation(1, 1, 1, OSMTurnRelation.Type.NOT);
-        assertTrue(encoder.acceptsTurnRelation(osmTurnRelation));
-
-        vehicleTypesExcept.add("bus");
-        osmTurnRelation.addVehicleTypesExcept(vehicleTypesExcept);
-        assertTrue(encoder.acceptsTurnRelation(osmTurnRelation));
-
-        vehicleTypesExcept.clear();
-        vehicleTypesExcept.add("vehicle");
-        osmTurnRelation.addVehicleTypesExcept(vehicleTypesExcept);
-        assertFalse(encoder.acceptsTurnRelation(osmTurnRelation));
-
-        vehicleTypesExcept.clear();
-        vehicleTypesExcept.add("motor_vehicle");
-        vehicleTypesExcept.add("vehicle");
-        osmTurnRelation.addVehicleTypesExcept(vehicleTypesExcept);
-        assertFalse(encoder.acceptsTurnRelation(osmTurnRelation));
-
-        vehicleTypesExcept.clear();
-        osmTurnRelation.setVehicleTypeRestricted("bus");
-        osmTurnRelation.addVehicleTypesExcept(vehicleTypesExcept);
-        assertFalse(encoder.acceptsTurnRelation(osmTurnRelation));
-
-        osmTurnRelation.setVehicleTypeRestricted("vehicle");
-        assertTrue(encoder.acceptsTurnRelation(osmTurnRelation));
     }
 }
