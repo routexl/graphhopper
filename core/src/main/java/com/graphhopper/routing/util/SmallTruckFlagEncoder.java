@@ -43,8 +43,6 @@ public class SmallTruckFlagEncoder extends AbstractFlagEncoder {
     // This value determines the maximal possible on roads with bad surfaces
     protected int badSurfaceSpeed;
 
-    // This value determines the speed for roads with access=destination
-    protected int destinationSpeed;
     protected boolean speedTwoDirections;
     /**
      * A map which associates string to speed. Get some impression:
@@ -61,7 +59,6 @@ public class SmallTruckFlagEncoder extends AbstractFlagEncoder {
         this((int) properties.getLong("speed_bits", 5),
                 properties.getDouble("speed_factor", 5),
                 properties.getBool("turn_costs", false) ? 1 : 0);
-        this.properties = properties;
         this.speedTwoDirections = properties.getBool("speed_two_directions", false);
         this.setBlockFords(properties.getBool("block_fords", true));
         this.setBlockByDefault(properties.getBool("block_barriers", true));
@@ -148,7 +145,6 @@ public class SmallTruckFlagEncoder extends AbstractFlagEncoder {
 
         // limit speed on bad surfaces to 30 km/h
         badSurfaceSpeed = 25;
-        destinationSpeed = 5;
         maxPossibleSpeed = 110;
         speedDefault = defaultSpeedMap.get("secondary");
         
@@ -167,7 +163,7 @@ public class SmallTruckFlagEncoder extends AbstractFlagEncoder {
     public void createEncodedValues(List<EncodedValue> registerNewEncodedValue, String prefix, int index) {
         // first two bits are reserved for route handling in superclass
         super.createEncodedValues(registerNewEncodedValue, prefix, index);
-        registerNewEncodedValue.add(speedEncoder = new UnsignedDecimalEncodedValue(EncodingManager.getKey(prefix, "average_speed"), speedBits, speedFactor, speedTwoDirections));
+        registerNewEncodedValue.add(avgSpeedEnc = new UnsignedDecimalEncodedValue(EncodingManager.getKey(prefix, "average_speed"), speedBits, speedFactor, speedTwoDirections));
     }
 
     protected double getSpeed(ReaderWay way) {
@@ -285,14 +281,6 @@ public class SmallTruckFlagEncoder extends AbstractFlagEncoder {
             	setSpeed(true, edgeFlags, ferrySpeed);
         }
 
-        for (String restriction : restrictions) {
-            if (way.hasTag(restriction, "destination")) {
-                // This is problematic as Speed != Time
-                setSpeed(false, edgeFlags, destinationSpeed);
-                if (speedTwoDirections)
-                	setSpeed(true, edgeFlags, destinationSpeed);
-            }
-        }
         return edgeFlags;
     }
 
@@ -320,35 +308,6 @@ public class SmallTruckFlagEncoder extends AbstractFlagEncoder {
                 || way.hasTag("vehicle:forward")
                 || way.hasTag("motor_vehicle:backward")
                 || way.hasTag("motor_vehicle:forward");
-    }
-
-    public String getWayInfo(ReaderWay way) {
-        String str = "";
-        String highwayValue = way.getTag("highway");
-        // for now only motorway links
-        if ("motorway_link".equals(highwayValue)) {
-            String destination = way.getTag("destination");
-            if (!Helper.isEmpty(destination)) {
-                int counter = 0;
-                for (String d : destination.split(";")) {
-                    if (d.trim().isEmpty())
-                        continue;
-
-                    if (counter > 0)
-                        str += ", ";
-
-                    str += d.trim();
-                    counter++;
-                }
-            }
-        }
-        if (str.isEmpty())
-            return str;
-        // I18N
-        if (str.contains(","))
-            return "destinations: " + str;
-        else
-            return "destination: " + str;
     }
 
     /**
