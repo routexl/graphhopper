@@ -89,7 +89,6 @@ public class SmallTruckFlagEncoder extends AbstractFlagEncoder {
         intendedValues.add("designated");
         intendedValues.add("discouraged");
 
-        potentialBarriers.add("gate");
         potentialBarriers.add("kissing_gate");
         potentialBarriers.add("swing_gate");
 
