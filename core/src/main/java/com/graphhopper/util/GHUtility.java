@@ -22,12 +22,9 @@ import com.graphhopper.coll.GHBitSet;
 import com.graphhopper.coll.GHBitSetImpl;
 import com.graphhopper.coll.GHIntArrayList;
 import com.graphhopper.coll.GHTBitSet;
-import com.graphhopper.routing.profiles.BooleanEncodedValue;
-import com.graphhopper.routing.profiles.DecimalEncodedValue;
-import com.graphhopper.routing.profiles.EnumEncodedValue;
-import com.graphhopper.routing.profiles.IntEncodedValue;
+import com.graphhopper.routing.profiles.*;
 import com.graphhopper.routing.util.*;
-import com.graphhopper.routing.util.parsers.*;
+import com.graphhopper.routing.weighting.Weighting;
 import com.graphhopper.storage.*;
 import com.graphhopper.util.shapes.BBox;
 import org.slf4j.Logger;
@@ -36,6 +33,8 @@ import org.slf4j.LoggerFactory;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static com.graphhopper.routing.profiles.TurnCost.EV_SUFFIX;
+import static com.graphhopper.routing.util.EncodingManager.getKey;
 import static com.graphhopper.util.Helper.DIST_EARTH;
 
 /**
@@ -123,7 +122,7 @@ public class GHUtility {
     }
 
     public static void printEdgeInfo(final Graph g, FlagEncoder encoder) {
-        System.out.println("-- Graph nodes:" + g.getNodes() + " edges:" + g.getAllEdges().length() + " ---");
+        System.out.println("-- Graph nodes:" + g.getNodes() + " edges:" + g.getEdges() + " ---");
         AllEdgesIterator iter = g.getAllEdges();
         BooleanEncodedValue accessEnc = encoder.getAccessEnc();
         while (iter.next()) {
@@ -166,7 +165,7 @@ public class GHUtility {
         int from = fwd ? edge.getBaseNode() : edge.getAdjNode();
         int to = fwd ? edge.getAdjNode() : edge.getBaseNode();
         System.out.printf(Locale.ROOT,
-                "graph.edge(%d, %d, %f, %s);\n", from, to, edge.getDistance(), fwd && bwd ? "true" : "false");
+                "graph.edge(%d, %d, %f, %s); // edgeId=%s\n", from, to, edge.getDistance(), fwd && bwd ? "true" : "false", edge.getEdge());
     }
 
     public static void buildRandomGraph(Graph graph, Random random, int numNodes, double meanDegree, boolean allowLoops,
@@ -206,8 +205,8 @@ public class GHUtility {
             // using bidirectional edges will increase mean degree of graph above given value
             boolean bothDirections = random.nextDouble() < pBothDir;
             EdgeIteratorState edge = graph.edge(from, to, distance, bothDirections);
-            double fwdSpeed = 10 + random.nextDouble() * 120;
-            double bwdSpeed = 10 + random.nextDouble() * 120;
+            double fwdSpeed = 10 + random.nextDouble() * 110;
+            double bwdSpeed = 10 + random.nextDouble() * 110;
             if (randomSpeedEnc != null) {
                 edge.set(randomSpeedEnc, fwdSpeed);
                 if (randomSpeedEnc.isStoreTwoDirections())
@@ -217,7 +216,7 @@ public class GHUtility {
         }
         LOGGER.debug(String.format(Locale.ROOT, "Finished building random graph" +
                         ", nodes: %d, edges: %d , min distance: %.2f, max distance: %.2f\n",
-                graph.getNodes(), graph.getAllEdges().length(), minDist, maxDist));
+                graph.getNodes(), graph.getEdges(), minDist, maxDist));
     }
 
     public static double getDistance(int from, int to, NodeAccess nodeAccess) {
@@ -228,13 +227,16 @@ public class GHUtility {
         return Helper.DIST_PLANE.calcDist(fromLat, fromLon, toLat, toLon);
     }
 
-    public static void addRandomTurnCosts(Graph graph, long seed, FlagEncoder encoder, int maxTurnCost, TurnCostExtension turnCostExtension) {
+    public static void addRandomTurnCosts(Graph graph, long seed, EncodingManager em, FlagEncoder encoder, int maxTurnCost, TurnCostStorage turnCostStorage) {
         Random random = new Random(seed);
         double pNodeHasTurnCosts = 0.3;
         double pEdgePairHasTurnCosts = 0.6;
         double pCostIsRestriction = 0.1;
+
+        DecimalEncodedValue turnCostEnc = em.getDecimalEncodedValue(getKey(encoder.toString(), EV_SUFFIX));
         EdgeExplorer inExplorer = graph.createEdgeExplorer(DefaultEdgeFilter.inEdges(encoder));
         EdgeExplorer outExplorer = graph.createEdgeExplorer(DefaultEdgeFilter.outEdges(encoder));
+        IntsRef tcFlags = TurnCost.createFlags();
         for (int node = 0; node < graph.getNodes(); ++node) {
             if (random.nextDouble() < pNodeHasTurnCosts) {
                 EdgeIterator inIter = inExplorer.setBaseNode(node);
@@ -246,12 +248,8 @@ public class GHUtility {
                             continue;
                         }
                         if (random.nextDouble() < pEdgePairHasTurnCosts) {
-                            boolean restricted = false;
-                            if (random.nextDouble() < pCostIsRestriction) {
-                                restricted = true;
-                            }
-                            double cost = restricted ? 0 : random.nextDouble() * maxTurnCost;
-                            turnCostExtension.addTurnInfo(inIter.getEdge(), node, outIter.getEdge(), encoder.getTurnFlags(restricted, cost));
+                            double cost = random.nextDouble() < pCostIsRestriction ? Double.POSITIVE_INFINITY : random.nextDouble() * maxTurnCost;
+                            turnCostStorage.set(turnCostEnc, tcFlags, inIter.getEdge(), node, outIter.getEdge(), cost);
                         }
                     }
                 }
@@ -301,7 +299,7 @@ public class GHUtility {
     }
 
     public static Graph shuffle(Graph g, Graph sortedGraph) {
-        if (g.getTurnCostExtension() != null) {
+        if (g.getTurnCostStorage() != null) {
             throw new IllegalArgumentException("Shuffling the graph is currently not supported in the presence of turn costs");
         }
         int nodes = g.getNodes();
@@ -328,7 +326,7 @@ public class GHUtility {
      * significant difference (bfs) for querying or are worse (z-curve).
      */
     public static Graph sortDFS(Graph g, Graph sortedGraph) {
-        if (g.getTurnCostExtension() != null) {
+        if (g.getTurnCostStorage() != null) {
             throw new IllegalArgumentException("Sorting the graph is currently not supported in the presence of turn costs");
         }
         int nodes = g.getNodes();
@@ -373,7 +371,7 @@ public class GHUtility {
     }
 
     static Graph createSortedGraph(Graph fromGraph, Graph toSortedGraph, final IntIndexedContainer oldToNewNodeList, final IntIndexedContainer newToOldEdgeList) {
-        if (fromGraph.getTurnCostExtension() != null) {
+        if (fromGraph.getTurnCostStorage() != null) {
             throw new IllegalArgumentException("Sorting the graph is currently not supported in the presence of turn costs");
         }
         int edges = fromGraph.getEdges();
@@ -414,7 +412,7 @@ public class GHUtility {
      */
     // TODO very similar to createSortedGraph -> use a 'int map(int)' interface
     public static Graph copyTo(Graph fromGraph, Graph toGraph) {
-        if (fromGraph.getTurnCostExtension() != null) {
+        if (fromGraph.getTurnCostStorage() != null) {
             throw new IllegalArgumentException("Copying a graph is currently not supported in the presence of turn costs");
         }
         AllEdgesIterator eIter = fromGraph.getAllEdges();
@@ -451,7 +449,13 @@ public class GHUtility {
     public static GraphHopperStorage newStorage(GraphHopperStorage store) {
         Directory outdir = guessDirectory(store);
         boolean is3D = store.getNodeAccess().is3D();
-        return new GraphHopperStorage(store.getCHProfiles(), outdir, store.getEncodingManager(), is3D, store.getTurnCostExtension() != null).create(store.getNodes());
+        return new GraphBuilder(store.getEncodingManager())
+                .withTurnCosts(store.getTurnCostStorage() != null)
+                .set3D(is3D)
+                .setDir(outdir)
+                .setCHProfiles(store.getCHProfiles())
+                .setBytes(store.getNodes())
+                .create();
     }
 
     public static int getAdjNode(Graph g, int edge, int adjNode) {
@@ -633,12 +637,6 @@ public class GHUtility {
         return edge;
     }
 
-    public static EncodingManager.Builder addDefaultEncodedValues(EncodingManager.Builder builder) {
-        return builder.add(new OSMRoadClassParser()).add(new OSMRoadClassLinkParser()).
-                add(new OSMRoadEnvironmentParser()).add(new OSMMaxSpeedParser()).add(new OSMRoadAccessParser()).
-                add(new OSMSurfaceParser());
-    }
-
     public static void updateDistancesFor(Graph g, int node, double lat, double lon) {
         NodeAccess na = g.getNodeAccess();
         na.setNode(node, lat, lon);
@@ -647,6 +645,42 @@ public class GHUtility {
             iter.setDistance(iter.fetchWayGeometry(3).calcDistance(DIST_EARTH));
             // System.out.println(node + "->" + adj + ": " + iter.getDistance());
         }
+    }
+
+    /**
+     * Calculates the weight of a given edge like {@link Weighting#calcEdgeWeight} and adds the transition
+     * cost (the turn weight, {@link Weighting#calcTurnWeight}) associated with transitioning from/to the edge with ID prevOrNextEdgeId.
+     *
+     * @param prevOrNextEdgeId if reverse is false this has to be the previous edgeId, if true it
+     *                         has to be the next edgeId in the direction from start to end.
+     */
+    public static double calcWeightWithTurnWeight(Weighting weighting, EdgeIteratorState edgeState, boolean reverse, int prevOrNextEdgeId) {
+        final double edgeWeight = weighting.calcEdgeWeight(edgeState, reverse);
+        if (!EdgeIterator.Edge.isValid(prevOrNextEdgeId)) {
+            return edgeWeight;
+        }
+        final int origEdgeId = reverse ? edgeState.getOrigEdgeLast() : edgeState.getOrigEdgeFirst();
+        double turnWeight = reverse
+                ? weighting.calcTurnWeight(origEdgeId, edgeState.getBaseNode(), prevOrNextEdgeId)
+                : weighting.calcTurnWeight(prevOrNextEdgeId, edgeState.getBaseNode(), origEdgeId);
+        return edgeWeight + turnWeight;
+    }
+
+    /**
+     * @see #calcWeightWithTurnWeight(Weighting, EdgeIteratorState, boolean, int)
+     */
+    public static long calcMillisWithTurnMillis(Weighting weighting, EdgeIteratorState edgeState, boolean reverse, int prevOrNextEdgeId) {
+        long edgeMillis = weighting.calcEdgeMillis(edgeState, reverse);
+        if (!EdgeIterator.Edge.isValid(prevOrNextEdgeId)) {
+            return edgeMillis;
+        }
+        // should we also separate weighting vs. time for turn? E.g. a fast but dangerous turn - is this common?
+        // todo: why no first/last orig edge here as in calcWeight ?
+        final int origEdgeId = edgeState.getEdge();
+        long turnMillis = reverse
+                ? weighting.calcTurnMillis(origEdgeId, edgeState.getBaseNode(), prevOrNextEdgeId)
+                : weighting.calcTurnMillis(prevOrNextEdgeId, edgeState.getBaseNode(), origEdgeId);
+        return edgeMillis + turnMillis;
     }
 
     /**
@@ -810,6 +844,16 @@ public class GHUtility {
         }
 
         @Override
+        public boolean getFwdAccess() {
+            throw new UnsupportedOperationException("Not supported. Edge is empty.");
+        }
+
+        @Override
+        public boolean getBwdAccess() {
+            throw new UnsupportedOperationException("Not supported. Edge is empty.");
+        }
+
+        @Override
         public int getSkippedEdge1() {
             throw new UnsupportedOperationException("Not supported. Edge is empty.");
         }
@@ -821,11 +865,6 @@ public class GHUtility {
 
         @Override
         public CHEdgeIteratorState setSkippedEdges(int edge1, int edge2) {
-            throw new UnsupportedOperationException("Not supported. Edge is empty.");
-        }
-
-        @Override
-        public CHEdgeIteratorState setFirstAndLastOrigEdges(int firstOrigEdge, int lastOrigEdge) {
             throw new UnsupportedOperationException("Not supported. Edge is empty.");
         }
 
