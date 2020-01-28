@@ -18,7 +18,6 @@
 package com.graphhopper.routing.util;
 
 import com.graphhopper.reader.OSMTurnRelation;
-import com.graphhopper.reader.ReaderRelation;
 import com.graphhopper.reader.ReaderWay;
 import com.graphhopper.routing.profiles.EncodedValue;
 import com.graphhopper.routing.profiles.UnsignedDecimalEncodedValue;
@@ -93,10 +92,6 @@ public class BusFlagEncoder extends AbstractFlagEncoder {
         absoluteBarriers.add("motorcycle_barrier");
         absoluteBarriers.add("block");
 
-        trackTypeSpeedMap.put("grade1", 20); // paved
-        trackTypeSpeedMap.put("grade2", 15); // now unpaved - gravel mixed with ...
-        trackTypeSpeedMap.put("grade3", 10); // ... hard and soft materials        
-
         badSurfaceSpeedMap.add("cobblestone");
         badSurfaceSpeedMap.add("grass_paver");
         badSurfaceSpeedMap.add("gravel");
@@ -134,12 +129,15 @@ public class BusFlagEncoder extends AbstractFlagEncoder {
         // forestry stuff
         defaultSpeedMap.put("track", 10);
         
+        trackTypeSpeedMap.put("grade1", 15); // paved
+        trackTypeSpeedMap.put("grade2", 10); // now unpaved - gravel mixed with ...
+        trackTypeSpeedMap.put("grade3", 10); // ... hard and soft materials
+        trackTypeSpeedMap.put(null, defaultSpeedMap.get("track"));
+        
         // limit speed on bad surfaces to 30 km/h
         badSurfaceSpeed = 25;
         maxPossibleSpeed = 100;
         speedDefault = defaultSpeedMap.get("secondary");
-
-        init();
     }
 
     @Override
@@ -180,11 +178,6 @@ public class BusFlagEncoder extends AbstractFlagEncoder {
     }
 
     @Override
-    public boolean acceptsTurnRelation(OSMTurnRelation relation) {
-        return relation.isVehicleTypeConcernedByTurnRestriction(restrictions);
-    }
-
-    @Override
     public EncodingManager.Access getAccess(ReaderWay way) {
         // TODO: Ferries have conditionals, like opening hours or are closed during some time in the year
         String highwayValue = way.getTag("highway");
@@ -201,11 +194,8 @@ public class BusFlagEncoder extends AbstractFlagEncoder {
             return EncodingManager.Access.CAN_SKIP;
         }
 
-        if ("track".equals(highwayValue)) {
-            String tt = way.getTag("tracktype");
-            if (tt != null && !tt.equals("grade1") && !tt.equals("grade2") && !tt.equals("grade3"))
-                return EncodingManager.Access.CAN_SKIP;
-        }
+        if ("track".equals(highwayValue) && trackTypeSpeedMap.get(way.getTag("tracktype")) == null)
+            return EncodingManager.Access.CAN_SKIP;
 
         if (!defaultSpeedMap.containsKey(highwayValue))
             return EncodingManager.Access.CAN_SKIP;
@@ -232,12 +222,7 @@ public class BusFlagEncoder extends AbstractFlagEncoder {
     }
 
     @Override
-    public long handleRelationTags(long oldRelationFlags, ReaderRelation relation) {
-        return oldRelationFlags;
-    }
-
-    @Override
-    public IntsRef handleWayTags(IntsRef edgeFlags, ReaderWay way, EncodingManager.Access accept, long relationFlags) {
+    public IntsRef handleWayTags(IntsRef edgeFlags, ReaderWay way, EncodingManager.Access accept) {
         if (accept.canSkip())
             return edgeFlags;
 
