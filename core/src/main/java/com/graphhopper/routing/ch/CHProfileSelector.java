@@ -25,23 +25,20 @@ import com.graphhopper.util.Parameters;
 import java.util.ArrayList;
 import java.util.List;
 
-import static com.graphhopper.routing.weighting.TurnWeighting.INFINITE_U_TURN_COSTS;
+import static com.graphhopper.routing.weighting.Weighting.INFINITE_U_TURN_COSTS;
 
 /**
  * This class is used to determine the appropriate CH profile given (or not given) some (request) parameters
  */
 public class CHProfileSelector {
     private final List<CHProfile> chProfiles;
-    // variables describing the requested CH profile
-    private final String weighting;
-    private final String vehicle;
+    private final HintsMap hintsMap;
     private final Boolean edgeBased;
     private final Integer uTurnCosts;
 
     private CHProfileSelector(List<CHProfile> chProfiles, HintsMap hintsMap) {
         this.chProfiles = chProfiles;
-        weighting = hintsMap.getWeighting();
-        vehicle = hintsMap.getVehicle();
+        this.hintsMap = hintsMap;
         edgeBased = hintsMap.has(Parameters.Routing.EDGE_BASED) ? hintsMap.getBool(Parameters.Routing.EDGE_BASED, false) : null;
         uTurnCosts = hintsMap.has(Parameters.Routing.U_TURN_COSTS) ? hintsMap.getInt(Parameters.Routing.U_TURN_COSTS, INFINITE_U_TURN_COSTS) : null;
     }
@@ -62,13 +59,7 @@ public class CHProfileSelector {
             if (edgeBased != null && p.isEdgeBased() != edgeBased) {
                 continue;
             }
-            if (uTurnCosts != null && p.getUTurnCostsInt() != uTurnCosts) {
-                continue;
-            }
-            if (!weighting.isEmpty() && !getWeighting(p).equals(weighting)) {
-                continue;
-            }
-            if (!vehicle.isEmpty() && !getVehicle(p).equals(vehicle)) {
+            if (!p.getWeighting().matches(hintsMap)) {
                 continue;
             }
             matchingProfiles.add(p);
@@ -103,9 +94,9 @@ public class CHProfileSelector {
 
     private String getRequestAsString() {
         StringBuilder sb = new StringBuilder();
-        sb.append(weighting.isEmpty() ? "*" : weighting);
+        sb.append(hintsMap.getWeighting().isEmpty() ? "*" : hintsMap.getWeighting());
         sb.append("|");
-        sb.append(vehicle.isEmpty() ? "*" : vehicle);
+        sb.append(hintsMap.getVehicle().isEmpty() ? "*" : hintsMap.getVehicle());
         sb.append("|");
         sb.append("edge_based=").append(edgeBased != null ? edgeBased : "*");
         sb.append("|");

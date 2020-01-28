@@ -33,25 +33,28 @@ public class GraphHopperStorageTest extends AbstractGraphStorageTester {
     @Override
     public GraphHopperStorage createGHStorage(String location, boolean enabled3D) {
         // reduce segment size in order to test the case where multiple segments come into the game
-        GraphHopperStorage gs = newGHStorage(new RAMDirectory(location), enabled3D);
-        gs.setSegmentSize(defaultSize / 2);
+        GraphHopperStorage gs = newGHStorage(new RAMDirectory(location), enabled3D, defaultSize / 2);
         gs.create(defaultSize);
         return gs;
     }
 
     protected GraphHopperStorage newGHStorage(Directory dir, boolean enabled3D) {
-        return new GraphHopperStorage(dir, encodingManager, enabled3D);
+        return newGHStorage(dir, enabled3D, -1);
+    }
+
+    protected GraphHopperStorage newGHStorage(Directory dir, boolean enabled3D, int segmentSize) {
+        return GraphBuilder.start(encodingManager).setDir(dir).set3D(enabled3D).setSegmentSize(segmentSize).build();
     }
 
     @Test
     public void testNoCreateCalled() {
-        try (GraphHopperStorage gs = new GraphBuilder(encodingManager).build()) {
+        try (GraphHopperStorage gs = GraphBuilder.start(encodingManager).build()) {
             ((BaseGraph) gs.getBaseGraph()).ensureNodeIndex(123);
-            fail("AssertionError should be raised");
-        } catch (AssertionError err) {
+            fail("IllegalStateException should be raised");
+        } catch (IllegalStateException err) {
             // ok
         } catch (Exception ex) {
-            fail("AssertionError should be raised, but was " + ex.toString());
+            fail("IllegalStateException should be raised, but was " + ex.toString());
         }
     }
 
@@ -215,7 +218,7 @@ public class GraphHopperStorageTest extends AbstractGraphStorageTester {
     public void testIdentical() {
         GraphHopperStorage store = new GraphHopperStorage(new RAMDirectory(), encodingManager, true);
         assertEquals(store.getNodes(), store.getBaseGraph().getNodes());
-        assertEquals(store.getAllEdges().length(), store.getBaseGraph().getAllEdges().length());
+        assertEquals(store.getEdges(), store.getBaseGraph().getEdges());
     }
 
     @Test

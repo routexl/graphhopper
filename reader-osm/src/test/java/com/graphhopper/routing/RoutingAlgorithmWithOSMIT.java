@@ -97,9 +97,9 @@ public class RoutingAlgorithmWithOSMIT {
     @Test
     public void testMonacoMotorcycle() {
         List<OneRun> list = new ArrayList<>();
-        list.add(new OneRun(43.730729, 7.42135, 43.727697, 7.419199, 2703, 119));
-        list.add(new OneRun(43.727687, 7.418737, 43.74958, 7.436566, 3749, 170));
-        list.add(new OneRun(43.728677, 7.41016, 43.739213, 7.4277, 3175, 169));
+        list.add(new OneRun(43.730729, 7.42135, 43.727697, 7.419199, 2682, 119));
+        list.add(new OneRun(43.727687, 7.418737, 43.74958, 7.436566, 3728, 170));
+        list.add(new OneRun(43.728677, 7.41016, 43.739213, 7.4277, 3168, 169));
         list.add(new OneRun(43.733802, 7.413433, 43.739662, 7.424355, 2423, 141));
         list.add(new OneRun(43.730949, 7.412338, 43.739643, 7.424542, 2253, 120));
         list.add(new OneRun(43.727592, 7.419333, 43.727712, 7.419333, 0, 1));
@@ -112,9 +112,9 @@ public class RoutingAlgorithmWithOSMIT {
     @Test
     public void testMonacoMotorcycleCurvature() {
         List<OneRun> list = new ArrayList<>();
-        list.add(new OneRun(43.730729, 7.42135, 43.727697, 7.419199, 2703, 119));
-        list.add(new OneRun(43.727687, 7.418737, 43.74958, 7.436566, 3749, 170));
-        list.add(new OneRun(43.728677, 7.41016, 43.739213, 7.4277, 3175, 169));
+        list.add(new OneRun(43.730729, 7.42135, 43.727697, 7.419199, 2681, 119));
+        list.add(new OneRun(43.727687, 7.418737, 43.74958, 7.436566, 3727, 170));
+        list.add(new OneRun(43.728677, 7.41016, 43.739213, 7.4277, 3168, 169));
         list.add(new OneRun(43.733802, 7.413433, 43.739662, 7.424355, 2423, 141));
         list.add(new OneRun(43.730949, 7.412338, 43.739643, 7.424542, 2253, 120));
         list.add(new OneRun(43.727592, 7.419333, 43.727712, 7.419333, 0, 1));
@@ -276,11 +276,11 @@ public class RoutingAlgorithmWithOSMIT {
         // most routes have same number of points as testMonaceFoot results but longer distance due to elevation difference
         List<OneRun> list = createMonacoFoot();
         list.get(0).setDistance(1, 1627);
-        list.get(2).setDistance(1, 2258);
+        list.get(2).setDistance(1, 2250);
         list.get(3).setDistance(1, 1482);
 
         // or slightly longer tour with less nodes: list.get(1).setDistance(1, 3610);
-        list.get(1).setDistance(1, 3595);
+        list.get(1).setDistance(1, 3573);
         list.get(1).setLocs(1, 149);
 
         runAlgo(testCollector, DIR + "/monaco.osm.gz", "target/monaco-gh",
@@ -304,9 +304,9 @@ public class RoutingAlgorithmWithOSMIT {
     public void testMonacoBike3D_twoSpeedsPerEdge() {
         List<OneRun> list = new ArrayList<>();
         // 1. alternative: go over steps 'Rampe Major' => 1.7km vs. around 2.7km
-        list.add(new OneRun(43.730864, 7.420771, 43.727687, 7.418737, 2710, 118));
+        list.add(new OneRun(43.730864, 7.420771, 43.727687, 7.418737, 2689, 118));
         // 2.
-        list.add(new OneRun(43.728499, 7.417907, 43.74958, 7.436566, 3777, 194));
+        list.add(new OneRun(43.728499, 7.417907, 43.74958, 7.436566, 3735, 194));
         // 3.
         list.add(new OneRun(43.728677, 7.41016, 43.739213, 7.427806, 2776, 167));
         // 4.
@@ -315,29 +315,28 @@ public class RoutingAlgorithmWithOSMIT {
         // try reverse direction
         // 1.
         list.add(new OneRun(43.727687, 7.418737, 43.730864, 7.420771, 2599, 115));
-        list.add(new OneRun(43.74958, 7.436566, 43.728499, 7.417907, 4199, 165));
-        list.add(new OneRun(43.739213, 7.427806, 43.728677, 7.41016, 3261, 177));
+        list.add(new OneRun(43.74958, 7.436566, 43.728499, 7.417907, 4180, 165));
+        list.add(new OneRun(43.739213, 7.427806, 43.728677, 7.41016, 3244, 177));
         // 4. avoid tunnel(s)!
-        list.add(new OneRun(43.739662, 7.424355, 43.733802, 7.413433, 2452, 112));
+        list.add(new OneRun(43.739662, 7.424355, 43.733802, 7.413433, 2436, 112));
         runAlgo(testCollector, DIR + "/monaco.osm.gz", "target/monaco-gh",
                 list, "bike2", true, "bike2", "fastest", true);
         assertEquals(testCollector.toString(), 0, testCollector.errors.size());
     }
 
-    // TODO fix later, see #1525, #1531
-//    @Test
-//    public void testLandmarkBug() {
-//        List<OneRun> list = new ArrayList<>();
-//        OneRun run = new OneRun();
-//        run.add(50.016923, 11.514187, 0, 0);
-//        run.add(50.019129, 11.500325, 0, 0);
-//        run.add(50.023623, 11.56929, 7069, 178);
-//        list.add(run);
-//
-//        runAlgo(testCollector, DIR + "/north-bayreuth.osm.gz", "target/north-bayreuth-gh",
-//                list, "bike", true, "bike", "fastest", false);
-//        assertEquals(testCollector.toString(), 0, testCollector.errors.size());
-//    }
+    @Test
+    public void testLandmarkBug() {
+        List<OneRun> list = new ArrayList<>();
+        OneRun run = new OneRun();
+        run.add(50.016923, 11.514187, 0, 0);
+        run.add(50.019129, 11.500325, 0, 0);
+        run.add(50.023623, 11.56929, 7069, 178);
+        list.add(run);
+
+        runAlgo(testCollector, DIR + "/north-bayreuth.osm.gz", "target/north-bayreuth-gh",
+                list, "bike", true, "bike", "fastest", false);
+        assertEquals(testCollector.toString(), 0, testCollector.errors.size());
+    }
 
     @Test
     public void testBug1014() {
@@ -563,8 +562,8 @@ public class RoutingAlgorithmWithOSMIT {
             // avoid that path.getDistance is too different to path.getPoint.calcDistance
             hopper.setWayPointMaxDistance(0);
 
-            // always enable landmarks, add maximum information to reduce warnings
-            hopper.getLMFactoryDecorator().addWeighting(weightStr + "|maximum=60000").
+            // always enable landmarks
+            hopper.getLMFactoryDecorator().addWeighting(weightStr ).
                     setEnabled(true).setDisablingAllowed(true);
 
             if (withCH)

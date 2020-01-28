@@ -253,6 +253,16 @@ public class VirtualEdgeIteratorState implements EdgeIteratorState, CHEdgeIterat
     }
 
     @Override
+    public boolean getFwdAccess() {
+        throw new UnsupportedOperationException("Not supported.");
+    }
+
+    @Override
+    public boolean getBwdAccess() {
+        throw new UnsupportedOperationException("Not supported.");
+    }
+
+    @Override
     public int getMergeStatus(int flags) {
         throw new UnsupportedOperationException("Not supported.");
     }
@@ -269,11 +279,6 @@ public class VirtualEdgeIteratorState implements EdgeIteratorState, CHEdgeIterat
 
     @Override
     public CHEdgeIteratorState setSkippedEdges(int edge1, int edge2) {
-        throw new UnsupportedOperationException("Not supported.");
-    }
-
-    @Override
-    public CHEdgeIteratorState setFirstAndLastOrigEdges(int firstOrigEdge, int lastOrigEdge) {
         throw new UnsupportedOperationException("Not supported.");
     }
 

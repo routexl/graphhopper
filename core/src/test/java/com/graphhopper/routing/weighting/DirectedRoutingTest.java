@@ -25,7 +25,7 @@ import org.junit.runners.Parameterized;
 
 import java.util.*;
 
-import static com.graphhopper.routing.weighting.TurnWeighting.INFINITE_U_TURN_COSTS;
+import static com.graphhopper.routing.weighting.Weighting.INFINITE_U_TURN_COSTS;
 import static com.graphhopper.util.EdgeIterator.ANY_EDGE;
 import static com.graphhopper.util.EdgeIterator.NO_EDGE;
 import static com.graphhopper.util.Parameters.Algorithms.ASTAR_BI;
@@ -38,7 +38,7 @@ import static org.junit.Assert.fail;
  * target edges, by comparing with {@link DijkstraBidirectionRef}
  *
  * @author easbar
- * @see BidirectionalRoutingTest
+ * @see RandomizedRoutingTest
  * @see DirectedBidirectionalDijkstraTest
  */
 @RunWith(Parameterized.class)
@@ -52,7 +52,7 @@ public class DirectedRoutingTest {
     private CHProfile chProfile;
     private CHGraph chGraph;
     private CarFlagEncoder encoder;
-    private TurnCostExtension turnCostExtension;
+    private TurnCostStorage turnCostStorage;
     private int maxTurnCosts;
     private Weighting weighting;
     private EncodingManager encodingManager;
@@ -62,7 +62,7 @@ public class DirectedRoutingTest {
     @Rule
     public RepeatRule repeatRule = new RepeatRule();
 
-    @Parameterized.Parameters(name = "{0}, u-turn-costs: {1}")
+    @Parameterized.Parameters(name = "{0}, u-turn-costs: {1}, prepareCH: {2}, prepareLM: {3}")
     public static Collection<Object[]> params() {
         return Arrays.asList(new Object[][]{
                 {Algo.ASTAR, INFINITE_U_TURN_COSTS, false, false},
@@ -100,10 +100,12 @@ public class DirectedRoutingTest {
         // todonow: make this work with speed_both_directions=true!
         encoder = new CarFlagEncoder(5, 5, maxTurnCosts);
         encodingManager = EncodingManager.create(encoder);
-        weighting = new FastestWeighting(encoder);
-        chProfile = CHProfile.edgeBased(weighting, uTurnCosts);
-        graph = createGraph();
-        turnCostExtension = graph.getTurnCostExtension();
+        graph = new GraphBuilder(encodingManager).setDir(dir).withTurnCosts(true).build();
+        turnCostStorage = graph.getTurnCostStorage();
+        weighting = new FastestWeighting(encoder, new DefaultTurnCostProvider(encoder, turnCostStorage, uTurnCosts));
+        chProfile = CHProfile.edgeBased(weighting);
+        graph.addCHGraph(chProfile);
+        graph.create(1000);
     }
 
     private void preProcessGraph() {
@@ -123,28 +125,24 @@ public class DirectedRoutingTest {
         }
     }
 
-    private AbstractBidirAlgo createAlgo() {
+    private BidirRoutingAlgorithm createAlgo() {
         return createAlgo(prepareCH ? chGraph : graph);
     }
 
-    private AbstractBidirAlgo createAlgo(Graph graph) {
+    private BidirRoutingAlgorithm createAlgo(Graph graph) {
         switch (algo) {
             case ASTAR:
-                return new AStarBidirection(graph, createTurnWeighting(graph), TraversalMode.EDGE_BASED);
+                return new AStarBidirection(graph, graph.wrapWeighting(weighting), TraversalMode.EDGE_BASED);
             case CH_DIJKSTRA:
-                return (AbstractBidirAlgo) pch.createAlgo(graph, AlgorithmOptions.start().weighting(weighting).algorithm(DIJKSTRA_BI).build());
+                return (BidirRoutingAlgorithm) pch.getRoutingAlgorithmFactory().createAlgo(graph, AlgorithmOptions.start().weighting(weighting).algorithm(DIJKSTRA_BI).build());
             case CH_ASTAR:
-                return (AbstractBidirAlgo) pch.createAlgo(graph, AlgorithmOptions.start().weighting(weighting).algorithm(ASTAR_BI).build());
+                return (BidirRoutingAlgorithm) pch.getRoutingAlgorithmFactory().createAlgo(graph, AlgorithmOptions.start().weighting(weighting).algorithm(ASTAR_BI).build());
             case LM:
-                AStarBidirection astarbi = new AStarBidirection(graph, createTurnWeighting(graph), TraversalMode.EDGE_BASED);
-                return (AbstractBidirAlgo) lm.getDecoratedAlgorithm(graph, astarbi, AlgorithmOptions.start().build());
+                AStarBidirection astarbi = new AStarBidirection(graph, graph.wrapWeighting(weighting), TraversalMode.EDGE_BASED);
+                return (BidirRoutingAlgorithm) lm.getDecoratedAlgorithm(graph, astarbi, AlgorithmOptions.start().build());
             default:
                 throw new IllegalArgumentException("unknown algo " + algo);
         }
-    }
-
-    private TurnWeighting createTurnWeighting(Graph g) {
-        return new TurnWeighting(weighting, g.getTurnCostExtension(), uTurnCosts);
     }
 
     @Test
@@ -155,7 +153,7 @@ public class DirectedRoutingTest {
         final int numQueries = 50;
         Random rnd = new Random(seed);
         GHUtility.buildRandomGraph(graph, rnd, 100, 2.2, true, true, encoder.getAverageSpeedEnc(), 0.7, 0.8, 0.8);
-        GHUtility.addRandomTurnCosts(graph, seed, encoder, maxTurnCosts, turnCostExtension);
+        GHUtility.addRandomTurnCosts(graph, seed, encodingManager, encoder, maxTurnCosts, turnCostStorage);
 //        GHUtility.printGraphForUnitTest(graph, encoder);
         preProcessGraph();
         List<String> strictViolations = new ArrayList<>();
@@ -165,7 +163,7 @@ public class DirectedRoutingTest {
             int sourceOutEdge = getSourceOutEdge(rnd, source, graph);
             int targetInEdge = getTargetInEdge(rnd, target, graph);
 //            System.out.println("source: " + source + ", target: " + target + ", sourceOutEdge: " + sourceOutEdge + ", targetInEdge: " + targetInEdge);
-            Path refPath = new DijkstraBidirectionRef(graph, createTurnWeighting(graph), TraversalMode.EDGE_BASED)
+            Path refPath = new DijkstraBidirectionRef(graph, ((Graph) graph).wrapWeighting(weighting), TraversalMode.EDGE_BASED)
                     .calcPath(source, target, sourceOutEdge, targetInEdge);
             Path path = createAlgo()
                     .calcPath(source, target, sourceOutEdge, targetInEdge);
@@ -197,8 +195,8 @@ public class DirectedRoutingTest {
         double pOffset = 0;
         Random rnd = new Random(seed);
         GHUtility.buildRandomGraph(graph, rnd, 50, 2.2, true, true, encoder.getAverageSpeedEnc(), 0.7, 0.8, pOffset);
-        GHUtility.addRandomTurnCosts(graph, seed, encoder, maxTurnCosts, turnCostExtension);
-//        GHUtility.printGraphForUnitTest(graph, encoder);
+        GHUtility.addRandomTurnCosts(graph, seed, encodingManager, encoder, maxTurnCosts, turnCostStorage);
+        // GHUtility.printGraphForUnitTest(graph, encoder);
         preProcessGraph();
         LocationIndexTree index = new LocationIndexTree(graph, dir);
         index.prepareIndex();
@@ -221,10 +219,11 @@ public class DirectedRoutingTest {
             int chSourceOutEdge = getSourceOutEdge(tmpRnd2, source, chQueryGraph);
             int chTargetInEdge = getTargetInEdge(tmpRnd2, target, chQueryGraph);
 
-            Path refPath = new DijkstraBidirectionRef(queryGraph, createTurnWeighting(queryGraph), TraversalMode.EDGE_BASED)
+            Path refPath = new DijkstraBidirectionRef(queryGraph, ((Graph) queryGraph).wrapWeighting(weighting), TraversalMode.EDGE_BASED)
                     .calcPath(source, target, sourceOutEdge, targetInEdge);
             Path path = createAlgo(chQueryGraph)
                     .calcPath(source, target, chSourceOutEdge, chTargetInEdge);
+
             // do not check nodes, because there can be ambiguity when there are zero weight loops
             strictViolations.addAll(comparePaths(refPath, path, source, target, false));
         }
@@ -280,13 +279,6 @@ public class DirectedRoutingTest {
             strictViolations.add("wrong nodes " + source + "->" + target + "\nexpected: " + refPath.calcNodes() + "\ngiven:    " + path.calcNodes());
         }
         return strictViolations;
-    }
-
-    private GraphHopperStorage createGraph() {
-        GraphHopperStorage gh = new GraphHopperStorage(Collections.singletonList(chProfile), dir, encodingManager,
-                false, true);
-        gh.create(1000);
-        return gh;
     }
 
     private int getTargetInEdge(Random rnd, int node, Graph graph) {

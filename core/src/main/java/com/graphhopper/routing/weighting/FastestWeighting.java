@@ -25,6 +25,8 @@ import com.graphhopper.util.EdgeIteratorState;
 import com.graphhopper.util.PMap;
 import com.graphhopper.util.Parameters.Routing;
 
+import static com.graphhopper.routing.weighting.TurnCostProvider.NO_TURN_COST_PROVIDER;
+
 /**
  * Calculates the fastest route with the specified vehicle (VehicleEncoder). Calculates the weight
  * in seconds.
@@ -41,12 +43,24 @@ public class FastestWeighting extends AbstractWeighting {
     private final double headingPenalty;
     private final long headingPenaltyMillis;
     private final double maxSpeed;
-    private EnumEncodedValue<RoadAccess> roadAccessEnc = null;
+    private final EnumEncodedValue<RoadAccess> roadAccessEnc;
     // this factor puts a penalty on roads with a "destination"-only access, see #733
-    private double roadAccessPenalty;
+    private final double roadAccessPenalty;
+
+    public FastestWeighting(FlagEncoder encoder) {
+        this(encoder, new HintsMap(0));
+    }
+
+    public FastestWeighting(FlagEncoder encoder, TurnCostProvider turnCostProvider) {
+        this(encoder, new HintsMap(0), turnCostProvider);
+    }
 
     public FastestWeighting(FlagEncoder encoder, PMap map) {
-        super(encoder);
+        this(encoder, map, NO_TURN_COST_PROVIDER);
+    }
+
+    public FastestWeighting(FlagEncoder encoder, PMap map, TurnCostProvider turnCostProvider) {
+        super(encoder, turnCostProvider);
         headingPenalty = map.getDouble(Routing.HEADING_PENALTY, Routing.DEFAULT_HEADING_PENALTY);
         headingPenaltyMillis = Math.round(headingPenalty * 1000);
         maxSpeed = encoder.getMaxSpeed() / SPEED_CONV;
@@ -55,11 +69,10 @@ public class FastestWeighting extends AbstractWeighting {
             // ensure that we do not need to change getMinWeight, i.e. road_access_factor >= 1
             roadAccessPenalty = checkBounds("road_access_factor", map.getDouble("road_access_factor", 10), 1, 10);
             roadAccessEnc = encoder.getEnumEncodedValue(RoadAccess.KEY, RoadAccess.class);
+        } else {
+            roadAccessPenalty = 0;
+            roadAccessEnc = null;
         }
-    }
-
-    public FastestWeighting(FlagEncoder encoder) {
-        this(encoder, new HintsMap(0));
     }
 
     @Override
@@ -68,18 +81,18 @@ public class FastestWeighting extends AbstractWeighting {
     }
 
     @Override
-    public double calcWeight(EdgeIteratorState edge, boolean reverse, int prevOrNextEdgeId) {
-        double speed = reverse ? edge.getReverse(avSpeedEnc) : edge.get(avSpeedEnc);
+    public double calcEdgeWeight(EdgeIteratorState edgeState, boolean reverse) {
+        double speed = reverse ? edgeState.getReverse(avSpeedEnc) : edgeState.get(avSpeedEnc);
         if (speed == 0)
             return Double.POSITIVE_INFINITY;
 
-        double time = edge.getDistance() / speed * SPEED_CONV;
+        double time = edgeState.getDistance() / speed * SPEED_CONV;
 
-        if (roadAccessEnc != null && edge.get(roadAccessEnc) == RoadAccess.DESTINATION)
+        if (roadAccessEnc != null && edgeState.get(roadAccessEnc) == RoadAccess.DESTINATION)
             time *= roadAccessPenalty;
 
         // add direction penalties at start/stop/via points
-        boolean unfavoredEdge = edge.get(EdgeIteratorState.UNFAVORED_EDGE);
+        boolean unfavoredEdge = edgeState.get(EdgeIteratorState.UNFAVORED_EDGE);
         if (unfavoredEdge)
             time += headingPenalty;
 
@@ -87,14 +100,14 @@ public class FastestWeighting extends AbstractWeighting {
     }
 
     @Override
-    public long calcMillis(EdgeIteratorState edgeState, boolean reverse, int prevOrNextEdgeId) {
+    public long calcEdgeMillis(EdgeIteratorState edgeState, boolean reverse) {
         // TODO move this to AbstractWeighting? see #485
         long time = 0;
         boolean unfavoredEdge = edgeState.get(EdgeIteratorState.UNFAVORED_EDGE);
         if (unfavoredEdge)
             time += headingPenaltyMillis;
 
-        return time + super.calcMillis(edgeState, reverse, prevOrNextEdgeId);
+        return time + super.calcEdgeMillis(edgeState, reverse);
     }
 
     static double checkBounds(String key, double val, double from, double to) {
