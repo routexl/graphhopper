@@ -23,6 +23,7 @@ import com.graphhopper.routing.profiles.RoadEnvironment;
 import com.graphhopper.storage.IntsRef;
 import com.graphhopper.storage.NodeAccess;
 import com.graphhopper.util.EdgeIteratorState;
+import com.graphhopper.util.FetchMode;
 import com.graphhopper.util.Helper;
 import com.graphhopper.util.PointList;
 import org.junit.Test;
@@ -85,8 +86,7 @@ public class BridgeElevationInterpolatorTest extends EdgeElevationInterpolatorTe
         EdgeIteratorState edge17 = graph.edge(1, 7, 10, true);
         EdgeIteratorState edge27 = graph.edge(2, 7, 10, true);
         EdgeIteratorState edge37 = graph.edge(3, 7, 10, true);
-        edge17.setWayGeometry(
-                Helper.createPointList3D(12, 2, 200, 14, 4, 400, 16, 6, 600, 18, 8, 800));
+        edge17.setWayGeometry(Helper.createPointList3D(12, 2, 200, 14, 4, 400, 16, 6, 600, 18, 8, 800));
 
         IntsRef relFlags = encodingManager.createRelationFlags();
         edge01.setFlags(encodingManager.handleWayTags(normalWay, ACCEPT_WAY, relFlags));
@@ -122,7 +122,7 @@ public class BridgeElevationInterpolatorTest extends EdgeElevationInterpolatorTe
         assertEquals(10, na.getElevation(8), PRECISION);
         assertEquals(0, na.getElevation(9), PRECISION);
 
-        final PointList edge17PointList = edge17.fetchWayGeometry(3);
+        final PointList edge17PointList = edge17.fetchWayGeometry(FetchMode.ALL);
         assertEquals(6, edge17PointList.size());
         assertEquals(10, edge17PointList.getEle(0), PRECISION);
         assertEquals(12, edge17PointList.getEle(1), PRECISION);

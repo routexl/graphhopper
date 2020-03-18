@@ -23,18 +23,15 @@ import com.graphhopper.reader.ReaderWay;
 import com.graphhopper.routing.profiles.*;
 import com.graphhopper.storage.IntsRef;
 import com.graphhopper.util.Helper;
-import com.graphhopper.util.Translation;
 import org.junit.Before;
 import org.junit.Test;
 
 import java.text.DateFormat;
 import java.util.Date;
-import java.util.Locale;
 
 import static com.graphhopper.routing.util.EncodingManager.Access.WAY;
 import static com.graphhopper.routing.util.EncodingManager.getKey;
 import static com.graphhopper.routing.util.PriorityCode.*;
-import static com.graphhopper.util.TranslationMapTest.SINGLETON;
 import static org.junit.Assert.*;
 
 /**
@@ -52,7 +49,6 @@ public abstract class AbstractBikeFlagEncoderTester {
     @Before
     public void setUp() {
         encodingManager = EncodingManager.create(encoder = createBikeEncoder());
-        encoder.setBlockFords(true);
         roundaboutEnc = encodingManager.getBooleanEncodedValue(Roundabout.KEY);
         priorityEnc = encodingManager.getDecimalEncodedValue(EncodingManager.getKey(encoder, "priority"));
         avSpeedEnc = encoder.getAverageSpeedEnc();
@@ -230,7 +226,7 @@ public abstract class AbstractBikeFlagEncoderTester {
         // Example https://www.openstreetmap.org/way/213492914 => two hike 84544, 2768803 and two bike relations 3162932, 5254650
         IntsRef relFlags = encodingManager.handleRelationTags(rel2, encodingManager.handleRelationTags(rel, encodingManager.createRelationFlags()));
         IntsRef edgeFlags = encodingManager.handleWayTags(way, new EncodingManager.AcceptWay().put(encoder.toString(), WAY), relFlags);
-        EnumEncodedValue<RouteNetwork> enc = encodingManager.getEnumEncodedValue(getKey("bike", RouteNetwork.EV_SUFFIX), RouteNetwork.class);
+        EnumEncodedValue<RouteNetwork> enc = encodingManager.getEnumEncodedValue(RouteNetwork.key("bike"), RouteNetwork.class);
         assertEquals(RouteNetwork.REGIONAL, enc.getEnum(false, edgeFlags));
     }
 

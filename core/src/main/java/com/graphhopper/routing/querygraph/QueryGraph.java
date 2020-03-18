@@ -118,10 +118,6 @@ public class QueryGraph implements Graph {
         return baseGraph;
     }
 
-    public EdgeIteratorState getOriginalEdgeFromVirtNode(int nodeId) {
-        return getEdgeIteratorState(graphModification.getClosestEdges().get(nodeId - mainNodes), Integer.MIN_VALUE);
-    }
-
     public boolean isVirtualEdge(int edgeId) {
         return edgeId >= mainEdges;
     }
@@ -156,7 +152,7 @@ public class QueryGraph implements Graph {
         for (int edgePos : edgePositions) {
             VirtualEdgeIteratorState edge = getVirtualEdge(virtNodeIDintern * 4 + edgePos);
 
-            PointList wayGeo = edge.fetchWayGeometry(3);
+            PointList wayGeo = edge.fetchWayGeometry(FetchMode.ALL);
             double edgeOrientation;
             if (incoming) {
                 int numWayPoints = wayGeo.getSize();

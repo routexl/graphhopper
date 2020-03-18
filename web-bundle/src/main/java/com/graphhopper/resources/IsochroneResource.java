@@ -3,16 +3,20 @@ package com.graphhopper.resources;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.graphhopper.GraphHopper;
+import com.graphhopper.config.ProfileConfig;
 import com.graphhopper.http.WebHelper;
 import com.graphhopper.isochrone.algorithm.ContourBuilder;
 import com.graphhopper.isochrone.algorithm.Isochrone;
 import com.graphhopper.json.geo.JsonFeature;
 import com.graphhopper.routing.querygraph.QueryGraph;
 import com.graphhopper.routing.util.*;
+import com.graphhopper.routing.weighting.BlockAreaWeighting;
 import com.graphhopper.routing.weighting.Weighting;
 import com.graphhopper.storage.Graph;
+import com.graphhopper.storage.GraphEdgeIdFinder;
 import com.graphhopper.storage.index.LocationIndex;
 import com.graphhopper.storage.index.QueryResult;
+import com.graphhopper.util.Parameters;
 import com.graphhopper.util.StopWatch;
 import com.graphhopper.util.shapes.GHPoint;
 import org.locationtech.jts.geom.*;
@@ -29,12 +33,7 @@ import javax.ws.rs.core.Context;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.UriInfo;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.List;
-
-import static com.graphhopper.routing.weighting.TurnCostProvider.NO_TURN_COST_PROVIDER;
+import java.util.*;
 
 @Path("isochrone")
 public class IsochroneResource {
@@ -55,7 +54,6 @@ public class IsochroneResource {
     @Produces({MediaType.APPLICATION_JSON})
     public Response doGet(
             @Context UriInfo uriInfo,
-            @QueryParam("vehicle") @DefaultValue("car") String vehicle,
             @QueryParam("buckets") @DefaultValue("1") int nBuckets,
             @QueryParam("reverse_flow") @DefaultValue("false") boolean reverseFlow,
             @QueryParam("point") GHPoint point,
@@ -71,14 +69,18 @@ public class IsochroneResource {
 
         StopWatch sw = new StopWatch().start();
 
-        if (!encodingManager.hasEncoder(vehicle))
-            throw new IllegalArgumentException("vehicle not supported:" + vehicle);
-
-        if (respType != null && !respType.equalsIgnoreCase("json") && !respType.equalsIgnoreCase("geojson")) {
+        if (respType != null && !respType.equalsIgnoreCase("json") && !respType.equalsIgnoreCase("geojson"))
             throw new IllegalArgumentException("Format not supported:" + respType);
-        }
 
-        FlagEncoder encoder = encodingManager.getEncoder(vehicle);
+        HintsMap hintsMap = new HintsMap();
+        RouteResource.initHints(hintsMap, uriInfo.getQueryParameters());
+        hintsMap.putObject(Parameters.CH.DISABLE, true);
+        hintsMap.putObject(Parameters.Landmark.DISABLE, true);
+        ProfileConfig profile = graphHopper.resolveProfile(hintsMap);
+        if (profile.isTurnCosts()) {
+            throw new IllegalArgumentException("Isochrone calculation does not support turn costs yet");
+        }
+        FlagEncoder encoder = encodingManager.getEncoder(profile.getVehicle());
         EdgeFilter edgeFilter = DefaultEdgeFilter.allEdges(encoder);
         LocationIndex locationIndex = graphHopper.getLocationIndex();
         QueryResult qr = locationIndex.findClosest(point.lat, point.lon, edgeFilter);
@@ -88,11 +90,10 @@ public class IsochroneResource {
         Graph graph = graphHopper.getGraphHopperStorage();
         QueryGraph queryGraph = QueryGraph.lookup(graph, qr);
 
-        HintsMap hintsMap = new HintsMap();
-        RouteResource.initHints(hintsMap, uriInfo.getQueryParameters());
-
-        // todo: isochrones with turn costs ?
-        Weighting weighting = graphHopper.createWeighting(hintsMap, encoder, graph, NO_TURN_COST_PROVIDER);
+        Weighting weighting = graphHopper.createWeighting(profile, hintsMap);
+        if (hintsMap.has(Parameters.Routing.BLOCK_AREA))
+            weighting = new BlockAreaWeighting(weighting, GraphEdgeIdFinder.createBlockArea(graph, locationIndex,
+                    Collections.singletonList(point), hintsMap, DefaultEdgeFilter.allEdges(encoder)));
         Isochrone isochrone = new Isochrone(queryGraph, weighting, reverseFlow);
 
         if (distanceInMeter > 0) {
@@ -118,7 +119,7 @@ public class IsochroneResource {
         }
 
         ConformingDelaunayTriangulator conformingDelaunayTriangulator = new ConformingDelaunayTriangulator(sites, 0.0);
-        conformingDelaunayTriangulator.setConstraints(new ArrayList(), new ArrayList());
+        conformingDelaunayTriangulator.setConstraints(new ArrayList<>(), new ArrayList<>());
         conformingDelaunayTriangulator.formInitialDelaunay();
         conformingDelaunayTriangulator.enforceConstraints();
         Geometry convexHull = conformingDelaunayTriangulator.getConvexHull();

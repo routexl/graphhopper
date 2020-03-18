@@ -40,7 +40,6 @@ import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
 
-import static com.graphhopper.routing.profiles.TurnCost.EV_SUFFIX;
 import static com.graphhopper.storage.index.QueryResult.Position.*;
 import static com.graphhopper.util.GHUtility.updateDistancesFor;
 import static org.junit.Assert.*;
@@ -177,11 +176,11 @@ public class QueryGraphTest {
 
         QueryGraph queryGraph = QueryGraph.lookup(g, qr);
         EdgeIteratorState state = GHUtility.getEdge(queryGraph, 0, 1);
-        assertEquals(4, state.fetchWayGeometry(3).size());
+        assertEquals(4, state.fetchWayGeometry(FetchMode.ALL).size());
 
         //  fetch virtual edge and check way geometry
         state = GHUtility.getEdge(queryGraph, 4, 3);
-        assertEquals(2, state.fetchWayGeometry(3).size());
+        assertEquals(2, state.fetchWayGeometry(FetchMode.ALL).size());
 
         // now we actually test the edges at the real tower nodes (virtual ones should be added and some real ones removed)
         assertEquals("[1->4, 1 1-0]", ((VirtualEdgeIterator) queryGraph.createEdgeExplorer().setBaseNode(1)).getEdges().toString());
@@ -275,7 +274,7 @@ public class QueryGraphTest {
         EdgeIteratorState edge = g.edge(0, 1);
         EdgeIteratorState edgeReverse = edge.detach(true);
 
-        DistanceCalc2D distCalc = new DistanceCalc2D();
+        DistanceCalcEuclidean distCalc = new DistanceCalcEuclidean();
         QueryResult qr = new QueryResult(0, 0.00005);
         qr.setClosestEdge(edge);
         qr.setWayIndex(0);
@@ -311,7 +310,7 @@ public class QueryGraphTest {
         QueryResult qr = new QueryResult(-0.0005, 0.001);
         qr.setClosestEdge(edge);
         qr.setWayIndex(1);
-        qr.calcSnappedPoint(new DistanceCalc2D());
+        qr.calcSnappedPoint(new DistanceCalcEuclidean());
 
         QueryGraph qg = lookup(qr);
         EdgeExplorer ee = qg.createEdgeExplorer();
@@ -343,7 +342,7 @@ public class QueryGraphTest {
         QueryResult qr = new QueryResult(0.0011, 0.0009);
         qr.setClosestEdge(edge);
         qr.setWayIndex(1);
-        qr.calcSnappedPoint(new DistanceCalc2D());
+        qr.calcSnappedPoint(new DistanceCalcEuclidean());
 
         QueryGraph qg = lookup(qr);
         EdgeExplorer ee = qg.createEdgeExplorer();
@@ -416,7 +415,7 @@ public class QueryGraphTest {
         EdgeIteratorState edge = GHUtility.getEdge(g, base, adj);
         if (edge == null)
             throw new IllegalStateException("edge " + base + "-" + adj + " not found");
-        return edge.fetchWayGeometry(3);
+        return edge.fetchWayGeometry(FetchMode.ALL);
     }
 
     public QueryResult createLocationResult(double lat, double lon,
@@ -497,8 +496,7 @@ public class QueryGraphTest {
         GraphHopperStorage graphWithTurnCosts = new GraphHopperStorage(new RAMDirectory(), em, false, true).
                 create(100);
         TurnCostStorage turnExt = graphWithTurnCosts.getTurnCostStorage();
-        IntsRef tcFlags = TurnCost.createFlags();
-        DecimalEncodedValue turnCostEnc = em.getDecimalEncodedValue(EncodingManager.getKey(encoder.toString(), EV_SUFFIX));
+        DecimalEncodedValue turnCostEnc = em.getDecimalEncodedValue(TurnCost.key(encoder.toString()));
         NodeAccess na = graphWithTurnCosts.getNodeAccess();
         na.setNode(0, .00, .00);
         na.setNode(1, .00, .01);
@@ -513,8 +511,7 @@ public class QueryGraphTest {
         assertEquals(0, weighting.calcTurnWeight(edge0.getEdge(), 1, edge1.getEdge()), .1);
 
         // now use turn costs
-        turnCostEnc.setDecimal(false, tcFlags, 10);
-        turnExt.setTurnCost(tcFlags, edge0.getEdge(), 1, edge1.getEdge());
+        turnExt.set(turnCostEnc, edge0.getEdge(), 1, edge1.getEdge(), 10);
         assertEquals(10, weighting.calcTurnWeight(edge0.getEdge(), 1, edge1.getEdge()), .1);
 
         // now use turn costs with query graph
@@ -548,7 +545,7 @@ public class QueryGraphTest {
         qr.setClosestEdge(edge);
         qr.setWayIndex(wayIndex);
         qr.setSnappedPosition(EDGE);
-        qr.calcSnappedPoint(new DistanceCalc2D());
+        qr.calcSnappedPoint(new DistanceCalcEuclidean());
         return qr;
     }
 
@@ -680,19 +677,19 @@ public class QueryGraphTest {
 
         assertTrue(iter.next());
         assertEquals(0, iter.getAdjNode());
-        assertEquals(1, iter.fetchWayGeometry(0).size());
-        assertEquals(2, iter.fetchWayGeometry(1).size());
-        assertEquals(2, iter.fetchWayGeometry(2).size());
-        assertEquals(3, iter.fetchWayGeometry(3).size());
-        assertEquals(Helper.createPointList(0.15, 0.15, 0.1, 0.1, 0.0, 0.0), iter.fetchWayGeometry(3));
+        assertEquals(1, iter.fetchWayGeometry(FetchMode.PILLAR_ONLY).size());
+        assertEquals(2, iter.fetchWayGeometry(FetchMode.BASE_AND_PILLAR).size());
+        assertEquals(2, iter.fetchWayGeometry(FetchMode.PILLAR_AND_ADJ).size());
+        assertEquals(3, iter.fetchWayGeometry(FetchMode.ALL).size());
+        assertEquals(Helper.createPointList(0.15, 0.15, 0.1, 0.1, 0.0, 0.0), iter.fetchWayGeometry(FetchMode.ALL));
 
         assertTrue(iter.next());
         assertEquals(1, iter.getAdjNode());
-        assertEquals(1, iter.fetchWayGeometry(0).size());
-        assertEquals(2, iter.fetchWayGeometry(1).size());
-        assertEquals(2, iter.fetchWayGeometry(2).size());
-        assertEquals(3, iter.fetchWayGeometry(3).size());
-        assertEquals(Helper.createPointList(0.15, 0.15, 0.2, 0.2, 0.3, 0.3), iter.fetchWayGeometry(3));
+        assertEquals(1, iter.fetchWayGeometry(FetchMode.PILLAR_ONLY).size());
+        assertEquals(2, iter.fetchWayGeometry(FetchMode.BASE_AND_PILLAR).size());
+        assertEquals(2, iter.fetchWayGeometry(FetchMode.PILLAR_AND_ADJ).size());
+        assertEquals(3, iter.fetchWayGeometry(FetchMode.ALL).size());
+        assertEquals(Helper.createPointList(0.15, 0.15, 0.2, 0.2, 0.3, 0.3), iter.fetchWayGeometry(FetchMode.ALL));
 
         assertFalse(iter.next());
     }
@@ -721,19 +718,19 @@ public class QueryGraphTest {
 
         assertTrue(iter.next());
         assertEquals(0, iter.getAdjNode());
-        assertEquals(1, iter.fetchWayGeometry(0).size());
-        assertEquals(2, iter.fetchWayGeometry(1).size());
-        assertEquals(2, iter.fetchWayGeometry(2).size());
-        assertEquals(3, iter.fetchWayGeometry(3).size());
-        assertEquals(Helper.createPointList(0.2, 0.2, 0.1, 0.1, 0.0, 0.0), iter.fetchWayGeometry(3));
+        assertEquals(1, iter.fetchWayGeometry(FetchMode.PILLAR_ONLY).size());
+        assertEquals(2, iter.fetchWayGeometry(FetchMode.BASE_AND_PILLAR).size());
+        assertEquals(2, iter.fetchWayGeometry(FetchMode.PILLAR_AND_ADJ).size());
+        assertEquals(3, iter.fetchWayGeometry(FetchMode.ALL).size());
+        assertEquals(Helper.createPointList(0.2, 0.2, 0.1, 0.1, 0.0, 0.0), iter.fetchWayGeometry(FetchMode.ALL));
 
         assertTrue(iter.next());
         assertEquals(1, iter.getAdjNode());
-        assertEquals(0, iter.fetchWayGeometry(0).size());
-        assertEquals(1, iter.fetchWayGeometry(1).size());
-        assertEquals(1, iter.fetchWayGeometry(2).size());
-        assertEquals(2, iter.fetchWayGeometry(3).size());
-        assertEquals(Helper.createPointList(0.2, 0.2, 0.5, 0.1), iter.fetchWayGeometry(3));
+        assertEquals(0, iter.fetchWayGeometry(FetchMode.PILLAR_ONLY).size());
+        assertEquals(1, iter.fetchWayGeometry(FetchMode.BASE_AND_PILLAR).size());
+        assertEquals(1, iter.fetchWayGeometry(FetchMode.PILLAR_AND_ADJ).size());
+        assertEquals(2, iter.fetchWayGeometry(FetchMode.ALL).size());
+        assertEquals(Helper.createPointList(0.2, 0.2, 0.5, 0.1), iter.fetchWayGeometry(FetchMode.ALL));
 
         assertFalse(iter.next());
     }

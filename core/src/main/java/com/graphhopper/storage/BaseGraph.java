@@ -50,8 +50,9 @@ import static com.graphhopper.util.Helper.nf;
  * loadExisting, (4) usage, (5) flush, (6) close
  */
 class BaseGraph implements Graph {
-    // currently distances are stored as 4 byte integers. using a conversion factor of 1000 the minimum distance
-    // that is not considered zero is 0.0005m (=0.5mm) and the maximum distance per edge is about 2.147.483m=2147km
+    // Currently distances are stored as 4 byte integers. using a conversion factor of 1000 the minimum distance
+    // that is not considered zero is 0.0005m (=0.5mm) and the maximum distance per edge is about 2.147.483m=2147km.
+    // See OSMReader.addEdge and #1871.
     private static final double INT_DIST_FACTOR = 1000d;
     static double MAX_DIST = Integer.MAX_VALUE / INT_DIST_FACTOR;
 
@@ -162,7 +163,7 @@ class BaseGraph implements Graph {
         this.bounds = BBox.createInverse(withElevation);
         this.nodeAccess = new GHNodeAccess(this, withElevation);
         if (withTurnCosts) {
-            turnCostStorage = new TurnCostStorage(nodeAccess, dir.find("turn_costs"));
+            turnCostStorage = new TurnCostStorage(this, dir.find("turn_costs"));
         } else {
             turnCostStorage = null;
         }
@@ -539,7 +540,7 @@ class BaseGraph implements Graph {
         // copy the rest with higher level API
         to.setDistance(from.getDistance()).
                 setName(from.getName()).
-                setWayGeometry(from.fetchWayGeometry(0));
+                setWayGeometry(from.fetchWayGeometry(FetchMode.PILLAR_ONLY));
 
         return to;
     }
@@ -949,7 +950,14 @@ class BaseGraph implements Graph {
         return bytes;
     }
 
-    private PointList fetchWayGeometry_(long edgePointer, boolean reverse, int mode, int baseNode, int adjNode) {
+    private PointList fetchWayGeometry_(long edgePointer, boolean reverse, FetchMode mode, int baseNode, int adjNode) {
+        if (mode == FetchMode.TOWER_ONLY) {
+            // no reverse handling required as adjNode and baseNode is already properly switched
+            PointList pillarNodes = new PointList(2, nodeAccess.is3D());
+            pillarNodes.add(nodeAccess, baseNode);
+            pillarNodes.add(nodeAccess, adjNode);
+            return pillarNodes;
+        }
         long geoRef = Helper.toUnsignedLong(edges.getInt(edgePointer + E_GEO));
         int count = 0;
         byte[] bytes = null;
@@ -960,14 +968,14 @@ class BaseGraph implements Graph {
             geoRef += 4L;
             bytes = new byte[count * nodeAccess.getDimension() * 4];
             wayGeometry.getBytes(geoRef, bytes, bytes.length);
-        } else if (mode == 0)
+        } else if (mode == FetchMode.PILLAR_ONLY)
             return PointList.EMPTY;
 
-        PointList pillarNodes = new PointList(count + mode, nodeAccess.is3D());
+        PointList pillarNodes = new PointList(getPointListLength(count, mode), nodeAccess.is3D());
         if (reverse) {
-            if ((mode & 2) != 0)
+            if (mode == FetchMode.ALL || mode == FetchMode.PILLAR_AND_ADJ)
                 pillarNodes.add(nodeAccess, adjNode);
-        } else if ((mode & 1) != 0)
+        } else if (mode == FetchMode.ALL || mode == FetchMode.BASE_AND_PILLAR)
             pillarNodes.add(nodeAccess, baseNode);
 
         int index = 0;
@@ -985,14 +993,29 @@ class BaseGraph implements Graph {
         }
 
         if (reverse) {
-            if ((mode & 1) != 0)
+            if (mode == FetchMode.ALL || mode == FetchMode.BASE_AND_PILLAR)
                 pillarNodes.add(nodeAccess, baseNode);
 
             pillarNodes.reverse();
-        } else if ((mode & 2) != 0)
+        } else if (mode == FetchMode.ALL || mode == FetchMode.PILLAR_AND_ADJ)
             pillarNodes.add(nodeAccess, adjNode);
 
         return pillarNodes;
+    }
+
+    static int getPointListLength(int pillarNodes, FetchMode mode) {
+        switch (mode) {
+            case TOWER_ONLY:
+                return 2;
+            case PILLAR_ONLY:
+                return pillarNodes;
+            case BASE_AND_PILLAR:
+            case PILLAR_AND_ADJ:
+                return pillarNodes + 1;
+            case ALL:
+                return pillarNodes + 2;
+        }
+        throw new IllegalArgumentException("Mode isn't handled " + mode);
     }
 
     private void setName(long edgePointer, String name) {
@@ -1350,7 +1373,7 @@ class BaseGraph implements Graph {
         }
 
         @Override
-        public PointList fetchWayGeometry(int mode) {
+        public PointList fetchWayGeometry(FetchMode mode) {
             return baseGraph.fetchWayGeometry_(edgePointer, reverse, mode, getBaseNode(), getAdjNode());
         }
 

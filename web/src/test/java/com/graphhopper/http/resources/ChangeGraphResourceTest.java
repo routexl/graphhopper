@@ -19,20 +19,17 @@ package com.graphhopper.http.resources;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.graphhopper.http.GraphHopperApplication;
-import com.graphhopper.http.GraphHopperServerConfiguration;
-import com.graphhopper.util.CmdArgs;
+import com.graphhopper.http.util.GraphHopperServerTestConfiguration;
 import com.graphhopper.util.Helper;
-import com.graphhopper.util.Parameters;
 import io.dropwizard.testing.junit.DropwizardAppRule;
-import org.junit.AfterClass;
-import org.junit.ClassRule;
-import org.junit.Test;
-
+import java.io.File;
 import javax.ws.rs.client.Entity;
 import javax.ws.rs.core.Response;
-import java.io.File;
-
+import org.junit.AfterClass;
 import static org.junit.Assert.*;
+import org.junit.ClassRule;
+import org.junit.Test;
+import static com.graphhopper.http.util.TestUtils.clientTarget;
 
 /**
  * @author Peter Karich
@@ -40,21 +37,19 @@ import static org.junit.Assert.*;
 public class ChangeGraphResourceTest {
     private static final String DIR = "./target/andorra-gh/";
 
-    private static final GraphHopperServerConfiguration config = new GraphHopperServerConfiguration();
+    private static final GraphHopperServerTestConfiguration config = new GraphHopperServerTestConfiguration();
 
     static {
-        config.getGraphHopperConfiguration().merge(new CmdArgs().
-                put(Parameters.CH.PREPARE + "weightings", "no").
+        config.getGraphHopperConfiguration().
                 put("graph.flag_encoders", "car").
-                put("web.change_graph.enabled", "true").
+                put("web.change_graph.enabled", true).
                 put("graph.location", DIR).
-                put("datareader.file", "../core/files/andorra.osm.pbf"));
+                put("datareader.file", "../core/files/andorra.osm.pbf");
     }
 
     @ClassRule
-    public static final DropwizardAppRule<GraphHopperServerConfiguration> app = new DropwizardAppRule(
+    public static final DropwizardAppRule<GraphHopperServerTestConfiguration> app = new DropwizardAppRule(
             GraphHopperApplication.class, config);
-
 
     @AfterClass
     public static void cleanUp() {
@@ -63,7 +58,7 @@ public class ChangeGraphResourceTest {
 
     @Test
     public void testBlockAccessViaPoint() throws Exception {
-        Response response = app.client().target("http://localhost:8080/route?point=42.531453,1.518946&point=42.511178,1.54006").request().buildGet().invoke();
+        Response response = clientTarget(app, "route?point=42.531453,1.518946&point=42.511178,1.54006").request().buildGet().invoke();
         assertEquals(200, response.getStatus());
         JsonNode json = response.readEntity(JsonNode.class);
         assertFalse(json.get("info").has("errors"));
@@ -85,13 +80,13 @@ public class ChangeGraphResourceTest {
                 + "    \"access\": false"
                 + "  }}]}";
 
-        response = app.client().target("http://localhost:8080/change").request().post(Entity.json(geoJson));
+        response = clientTarget(app, "/change").request().post(Entity.json(geoJson));
         assertEquals(200, response.getStatus());
         json = response.readEntity(JsonNode.class);
         assertEquals(1, json.get("updates").asInt());
 
         // route around blocked road => longer
-        response = app.client().target("http://localhost:8080/route?point=42.531453,1.518946&point=42.511178,1.54006").request().buildGet().invoke();
+        response = clientTarget(app, "/route?point=42.531453,1.518946&point=42.511178,1.54006").request().buildGet().invoke();
         assertEquals(200, response.getStatus());
         json = response.readEntity(JsonNode.class);
         assertFalse(json.get("info").has("errors"));

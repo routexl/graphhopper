@@ -20,9 +20,9 @@ package com.graphhopper.http.resources;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.graphhopper.http.GraphHopperApplication;
-import com.graphhopper.http.GraphHopperServerConfiguration;
+import com.graphhopper.http.util.GraphHopperServerTestConfiguration;
+import static com.graphhopper.http.util.TestUtils.clientTarget;
 import com.graphhopper.json.geo.JsonFeatureCollection;
-import com.graphhopper.util.CmdArgs;
 import com.graphhopper.util.Helper;
 import io.dropwizard.testing.junit.DropwizardAppRule;
 import org.junit.AfterClass;
@@ -35,6 +35,7 @@ import org.locationtech.jts.geom.GeometryFactory;
 import javax.ws.rs.core.Response;
 import java.io.File;
 
+import static com.graphhopper.util.Parameters.Routing.BLOCK_AREA;
 import static junit.framework.TestCase.assertFalse;
 import static junit.framework.TestCase.assertTrue;
 import static org.junit.Assert.assertEquals;
@@ -42,18 +43,17 @@ import static org.junit.Assert.assertEquals;
 public class IsochroneResourceTest {
     private static final String DIR = "./target/andorra-gh/";
 
-    private static final GraphHopperServerConfiguration config = new GraphHopperServerConfiguration();
+    private static final GraphHopperServerTestConfiguration config = new GraphHopperServerTestConfiguration();
 
     static {
-        config.getGraphHopperConfiguration().merge(new CmdArgs().
-                put("prepare.ch.weightings", "no").
+        config.getGraphHopperConfiguration().
                 put("graph.flag_encoders", "car").
                 put("datareader.file", "../core/files/andorra.osm.pbf").
-                put("graph.location", DIR));
+                put("graph.location", DIR);
     }
 
     @ClassRule
-    public static final DropwizardAppRule<GraphHopperServerConfiguration> app = new DropwizardAppRule<>(
+    public static final DropwizardAppRule<GraphHopperServerTestConfiguration> app = new DropwizardAppRule(
             GraphHopperApplication.class, config);
 
     @AfterClass
@@ -65,8 +65,8 @@ public class IsochroneResourceTest {
 
     @Test
     public void requestByTimeLimit() {
-        Response rsp = app.client().target("http://localhost:8080/isochrone")
-                .queryParam("point","42.531073,1.573792")
+        Response rsp = clientTarget(app, "/isochrone")
+                .queryParam("point", "42.531073,1.573792")
                 .queryParam("time_limit", 5 * 60)
                 .queryParam("buckets", 2)
                 .queryParam("type", "geojson")
@@ -86,8 +86,8 @@ public class IsochroneResourceTest {
 
     @Test
     public void requestByDistanceLimit() {
-        Response rsp = app.client().target("http://localhost:8080/isochrone")
-                .queryParam("point","42.531073,1.573792")
+        Response rsp = clientTarget(app, "/isochrone")
+                .queryParam("point", "42.531073,1.573792")
                 .queryParam("distance_limit", 3_000)
                 .queryParam("buckets", 2)
                 .queryParam("type", "geojson")
@@ -107,8 +107,8 @@ public class IsochroneResourceTest {
 
     @Test
     public void requestReverseFlow() {
-        Response rsp = app.client().target("http://localhost:8080/isochrone")
-                .queryParam("point","42.531073,1.573792")
+        Response rsp = clientTarget(app, "/isochrone")
+                .queryParam("point", "42.531073,1.573792")
                 .queryParam("reverse_flow", true)
                 .queryParam("time_limit", 5 * 60)
                 .queryParam("buckets", 2)
@@ -132,14 +132,14 @@ public class IsochroneResourceTest {
 
     @Test
     public void requestBadRequest() {
-        Response response = app.client().target("http://localhost:8080/route?point=-1.816719,51.557148").request().buildGet().invoke();
+        Response response = clientTarget(app, "/route?point=-1.816719,51.557148").request().buildGet().invoke();
         assertEquals(400, response.getStatus());
     }
 
     @Test
     public void requestWithShortest() {
-        Response rsp = app.client().target("http://localhost:8080/isochrone")
-                .queryParam("point","42.509644,1.540554")
+        Response rsp = clientTarget(app, "/isochrone")
+                .queryParam("point", "42.509644,1.540554")
                 .queryParam("time_limit", 130)
                 .queryParam("buckets", 1)
                 .queryParam("weighting", "shortest")
@@ -156,8 +156,8 @@ public class IsochroneResourceTest {
         // more like a circle => shorter is expected
         assertTrue(polygon0.getCoordinates().length < 185);
 
-        rsp = app.client().target("http://localhost:8080/isochrone")
-                .queryParam("point","42.509644,1.540554")
+        rsp = clientTarget(app, "/isochrone")
+                .queryParam("point", "42.509644,1.540554")
                 .queryParam("time_limit", 130)
                 .queryParam("buckets", 1)
                 .queryParam("weighting", "fastest")
@@ -167,10 +167,10 @@ public class IsochroneResourceTest {
         polygon0 = featureCollection.getFeatures().get(0).getGeometry();
         assertTrue(polygon0.getCoordinates().length >= 190);
     }
-    
+
     @Test
     public void requestJsonBadType() {
-        Response response = app.client().target("http://localhost:8080/isochrone?point=42.531073,1.573792&time_limit=130&type=xml")
+        Response response = clientTarget(app, "/isochrone?point=42.531073,1.573792&time_limit=130&type=xml")
                 .request().buildGet().invoke();
 
         JsonNode json = response.readEntity(JsonNode.class);
@@ -178,20 +178,43 @@ public class IsochroneResourceTest {
 
         assertEquals(message, "Format not supported:xml");
     }
-    
-    
+
+    @Test
+    public void requestWithBlockArea() {
+        Response rsp = clientTarget(app, "/isochrone")
+                .queryParam("point", "42.531073,1.573792")
+                .queryParam("time_limit", 5 * 60)
+                .queryParam("buckets", 2)
+                .queryParam("type", "geojson")
+                .queryParam(BLOCK_AREA, "42.558067,1.589429,100")
+                .request().buildGet().invoke();
+        JsonFeatureCollection featureCollection = rsp.readEntity(JsonFeatureCollection.class);
+
+        assertEquals(2, featureCollection.getFeatures().size());
+        Geometry polygon0 = featureCollection.getFeatures().get(0).getGeometry();
+        Geometry polygon1 = featureCollection.getFeatures().get(1).getGeometry();
+
+        assertTrue(polygon0.contains(geometryFactory.createPoint(new Coordinate(1.587224, 42.5386))));
+        assertFalse(polygon0.contains(geometryFactory.createPoint(new Coordinate(1.589756, 42.558012))));
+
+        assertFalse(polygon1.contains(geometryFactory.createPoint(new Coordinate(1.589756, 42.558012))));
+        assertFalse(polygon1.contains(geometryFactory.createPoint(new Coordinate(1.635246, 42.53841))));
+
+        assertTrue(polygon1.contains(geometryFactory.createPoint(new Coordinate(1.58864, 42.554582))));
+    }
+
     @Test
     public void requestJsonWithType() {
-        Response response = app.client().target("http://localhost:8080/isochrone?point=42.531073,1.573792&time_limit=130&type=json")
+        Response response = clientTarget(app, "/isochrone?point=42.531073,1.573792&time_limit=130&type=json")
                 .request().buildGet().invoke();
         JsonNode json = response.readEntity(JsonNode.class);
         assertTrue(json.has("polygons"));
         assertTrue(json.has("info"));
     }
-    
+
     @Test
     public void requestJsonNoType() {
-        Response response = app.client().target("http://localhost:8080/isochrone?point=42.531073,1.573792&time_limit=130")
+        Response response = clientTarget(app, "/isochrone?point=42.531073,1.573792&time_limit=130")
                 .request().buildGet().invoke();
         JsonNode json = response.readEntity(JsonNode.class);
         assertTrue(json.has("polygons"));
@@ -200,7 +223,7 @@ public class IsochroneResourceTest {
 
     @Test
     public void requestGeoJsonPolygons() {
-        Response response = app.client().target("http://localhost:8080/isochrone?point=42.531073,1.573792&time_limit=130&type=geojson")
+        Response response = clientTarget(app, "/isochrone?point=42.531073,1.573792&time_limit=130&type=geojson")
                 .request().buildGet().invoke();
         JsonNode json = response.readEntity(JsonNode.class);
 
@@ -224,7 +247,7 @@ public class IsochroneResourceTest {
 
     @Test
     public void requestGeoJsonPolygonsBuckets() {
-        Response response = app.client().target("http://localhost:8080/isochrone?point=42.531073,1.573792&time_limit=130&type=geojson&buckets=3")
+        Response response = clientTarget(app, "/isochrone?point=42.531073,1.573792&time_limit=130&type=geojson&buckets=3")
                 .request().buildGet().invoke();
         JsonNode json = response.readEntity(JsonNode.class);
 
