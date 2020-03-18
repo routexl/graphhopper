@@ -23,9 +23,7 @@ import com.graphhopper.GraphHopperAPI;
 import com.graphhopper.MultiException;
 import com.graphhopper.http.WebHelper;
 import com.graphhopper.routing.util.HintsMap;
-import com.graphhopper.util.Constants;
-import com.graphhopper.util.InstructionList;
-import com.graphhopper.util.StopWatch;
+import com.graphhopper.util.*;
 import com.graphhopper.util.gpx.GpxFromInstructions;
 import com.graphhopper.util.shapes.GHPoint;
 import org.slf4j.Logger;
@@ -105,6 +103,8 @@ public class RouteResource {
         if (favoredHeadings.size() > 1 && favoredHeadings.size() != requestPoints.size())
             throw new IllegalArgumentException("The number of 'heading' parameters must be <= 1 "
                     + "or equal to the number of points (" + requestPoints.size() + ")");
+
+        // TODO these checks should be only necessary once in the core, e.g. pointHints problems are currently ignored for POST requests
         if (pointHints.size() > 0 && pointHints.size() != requestPoints.size())
             throw new IllegalArgumentException("If you pass " + POINT_HINT + ", you need to pass exactly one hint for every point, empty hints will be ignored");
         if (curbsides.size() > 0 && curbsides.size() != requestPoints.size())
@@ -136,9 +136,9 @@ public class RouteResource {
                 setSnapPreventions(snapPreventions).
                 setPathDetails(pathDetails).
                 getHints().
-                put(CALC_POINTS, calcPoints).
-                put(INSTRUCTIONS, instructions).
-                put(WAY_POINT_MAX_DISTANCE, minPathPrecision);
+                putObject(CALC_POINTS, calcPoints).
+                putObject(INSTRUCTIONS, instructions).
+                putObject(WAY_POINT_MAX_DISTANCE, minPathPrecision);
 
         GHResponse ghResponse = graphHopper.route(request);
 
@@ -179,7 +179,7 @@ public class RouteResource {
         GHResponse ghResponse = graphHopper.route(request);
 
         boolean instructions = request.getHints().getBool(INSTRUCTIONS, true);
-        boolean writeGPX = "gpx".equalsIgnoreCase(request.getHints().get("type", "json"));
+        boolean writeGPX = "gpx".equalsIgnoreCase(request.getHints().getString("type", "json"));
         instructions = writeGPX || instructions;
         boolean enableElevation = request.getHints().getBool("elevation", false);
         boolean calcPoints = request.getHints().getBool(CALC_POINTS, true);
@@ -189,8 +189,8 @@ public class RouteResource {
         boolean withRoute = request.getHints().getBool("gpx.route", true);
         boolean withTrack = request.getHints().getBool("gpx.track", true);
         boolean withWayPoints = request.getHints().getBool("gpx.waypoints", false);
-        String trackName = request.getHints().get("gpx.trackname", "GraphHopper Track");
-        String timeString = request.getHints().get("gpx.millis", "");
+        String trackName = request.getHints().getString("gpx.trackname", "GraphHopper Track");
+        String timeString = request.getHints().getString("gpx.millis", "");
         float took = sw.stop().getSeconds();
         String infoStr = httpReq.getRemoteAddr() + " " + httpReq.getLocale() + " " + httpReq.getHeader("User-Agent");
         String logStr = httpReq.getQueryString() + " " + infoStr + " " + request.getPoints().size() + ", took:"
@@ -222,7 +222,7 @@ public class RouteResource {
             if (!request.getHints().getBool(EDGE_BASED, true)) {
                 throw new IllegalArgumentException("Disabling '" + EDGE_BASED + "' when using '" + CURBSIDE + "' is not allowed");
             } else {
-                request.getHints().put(EDGE_BASED, true);
+                request.getHints().putObject(EDGE_BASED, true);
             }
         }
     }
@@ -252,22 +252,14 @@ public class RouteResource {
     static void initHints(HintsMap m, MultivaluedMap<String, String> parameterMap) {
         for (Map.Entry<String, List<String>> e : parameterMap.entrySet()) {
             if (e.getValue().size() == 1) {
-                m.put(e.getKey(), e.getValue().get(0));
+                m.putObject(Helper.camelCaseToUnderScore(e.getKey()), Helper.toObject(e.getValue().get(0)));
             } else {
-                // Do nothing.
-                // TODO: this is dangerous: I can only silently swallow
-                // the forbidden multiparameter. If I comment-in the line below,
-                // I get an exception, because "point" regularly occurs
-                // multiple times.
-                // I think either unknown parameters (hints) should be allowed
-                // to be multiparameters, too, or we shouldn't use them for
-                // known parameters either, _or_ known parameters
-                // must be filtered before they come to this code point,
-                // _or_ we stop passing unknown parameters alltogether..
-                //
+                // TODO e.g. 'point' parameter occurs multiple times and we cannot throw an exception here
+                //  unknown parameters (hints) should be allowed to be multiparameters, too, or we shouldn't use them for
+                //  known parameters either, _or_ known parameters must be filtered before they come to this code point,
+                //  _or_ we stop passing unknown parameters alltogether.
                 // throw new WebApplicationException(String.format("This query parameter (hint) is not allowed to occur multiple times: %s", e.getKey()));
             }
         }
     }
-
 }

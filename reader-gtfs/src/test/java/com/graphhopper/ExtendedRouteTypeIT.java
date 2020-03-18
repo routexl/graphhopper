@@ -21,7 +21,6 @@ package com.graphhopper;
 import com.graphhopper.reader.gtfs.GraphHopperGtfs;
 import com.graphhopper.reader.gtfs.PtRouteResource;
 import com.graphhopper.reader.gtfs.Request;
-import com.graphhopper.util.CmdArgs;
 import com.graphhopper.util.Helper;
 import com.graphhopper.util.TranslationMap;
 import org.junit.AfterClass;
@@ -45,13 +44,13 @@ public class ExtendedRouteTypeIT {
 
     @BeforeClass
     public static void init() {
-        CmdArgs cmdArgs = new CmdArgs();
-        cmdArgs.put("graph.flag_encoders", "car,foot");
-        cmdArgs.put("graph.location", GRAPH_LOC);
-        cmdArgs.put("gtfs.file", "files/another-sample-feed-extended-route-type.zip");
+        GraphHopperConfig ghConfig = new GraphHopperConfig();
+        ghConfig.put("graph.flag_encoders", "car,foot");
+        ghConfig.put("graph.location", GRAPH_LOC);
+        ghConfig.put("gtfs.file", "files/another-sample-feed-extended-route-type.zip");
         Helper.removeDir(new File(GRAPH_LOC));
-        graphHopperGtfs = new GraphHopperGtfs(cmdArgs);
-        graphHopperGtfs.init(cmdArgs);
+        graphHopperGtfs = new GraphHopperGtfs(ghConfig);
+        graphHopperGtfs.init(ghConfig);
         graphHopperGtfs.importOrLoad();
         ptRouteResource = PtRouteResource.createFactory(new TranslationMap().doImport(), graphHopperGtfs, graphHopperGtfs.getLocationIndex(), graphHopperGtfs.getGtfsStorage())
                 .createWithoutRealtimeFeed();
@@ -65,12 +64,12 @@ public class ExtendedRouteTypeIT {
     @Test
     public void testRoute1() {
         final double FROM_LAT = 36.9010208, FROM_LON = -116.7659466;
-        final double TO_LAT =  36.9059371, TO_LON = -116.7618071;
+        final double TO_LAT = 36.9059371, TO_LON = -116.7618071;
         Request ghRequest = new Request(
                 FROM_LAT, FROM_LON,
                 TO_LAT, TO_LON
         );
-        ghRequest.setEarliestDepartureTime(LocalDateTime.of(2007,1,1,9,0,0).atZone(zoneId).toInstant());
+        ghRequest.setEarliestDepartureTime(LocalDateTime.of(2007, 1, 1, 9, 0, 0).atZone(zoneId).toInstant());
         ghRequest.setIgnoreTransfers(true);
         GHResponse route = ptRouteResource.route(ghRequest);
 

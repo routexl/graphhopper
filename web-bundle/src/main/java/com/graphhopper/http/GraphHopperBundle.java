@@ -20,6 +20,7 @@ package com.graphhopper.http;
 
 import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.databind.BeanDescription;
+import com.fasterxml.jackson.databind.MapperFeature;
 import com.fasterxml.jackson.databind.SerializationConfig;
 import com.fasterxml.jackson.databind.SerializerProvider;
 import com.fasterxml.jackson.databind.module.SimpleModule;
@@ -29,6 +30,7 @@ import com.fasterxml.jackson.databind.util.StdDateFormat;
 import com.fasterxml.jackson.datatype.jdk8.Jdk8Module;
 import com.graphhopper.GraphHopper;
 import com.graphhopper.GraphHopperAPI;
+import com.graphhopper.GraphHopperConfig;
 import com.graphhopper.http.health.GraphHopperHealthCheck;
 import com.graphhopper.jackson.Jackson;
 import com.graphhopper.reader.gtfs.GraphHopperGtfs;
@@ -38,7 +40,6 @@ import com.graphhopper.resources.*;
 import com.graphhopper.routing.util.EncodingManager;
 import com.graphhopper.storage.GraphHopperStorage;
 import com.graphhopper.storage.index.LocationIndex;
-import com.graphhopper.util.CmdArgs;
 import com.graphhopper.util.TranslationMap;
 import io.dropwizard.ConfiguredBundle;
 import io.dropwizard.setup.Bootstrap;
@@ -157,6 +158,8 @@ public class GraphHopperBundle implements ConfiguredBundle<GraphHopperBundleConf
 
         Jackson.initObjectMapper(bootstrap.getObjectMapper());
         bootstrap.getObjectMapper().setDateFormat(new StdDateFormat());
+        // See https://github.com/dropwizard/dropwizard/issues/1558
+        bootstrap.getObjectMapper().enable(MapperFeature.ALLOW_EXPLICIT_PROPERTY_RENAMING);
         // Because VirtualEdgeIteratorState has getters which throw Exceptions.
         // http://stackoverflow.com/questions/35359430/how-to-make-jackson-ignore-properties-if-the-getters-throw-exceptions
         bootstrap.getObjectMapper().registerModule(new SimpleModule().setSerializerModifier(new BeanSerializerModifier() {
@@ -178,7 +181,10 @@ public class GraphHopperBundle implements ConfiguredBundle<GraphHopperBundleConf
 
     @Override
     public void run(GraphHopperBundleConfiguration configuration, Environment environment) {
-        configuration.getGraphHopperConfiguration().merge(CmdArgs.readFromSystemProperties());
+        for (Object k : System.getProperties().keySet()) {
+            if (k instanceof String && ((String) k).startsWith("graphhopper."))
+                throw new IllegalArgumentException("You need to prefix system parameters with '-Ddw.graphhopper.' instead of '-Dgraphhopper.' see #1879 and #1897");
+        }
 
         // If the "?type=gpx" parameter is present, sets a corresponding media type header
         environment.jersey().register(new TypeGPXFilter());
@@ -196,7 +202,7 @@ public class GraphHopperBundle implements ConfiguredBundle<GraphHopperBundleConf
         environment.jersey().register(new AbstractBinder() {
             @Override
             protected void configure() {
-                bind(configuration.getGraphHopperConfiguration()).to(CmdArgs.class);
+                bind(configuration.getGraphHopperConfiguration()).to(GraphHopperConfig.class);
                 bind(graphHopperManaged.getGraphHopper()).to(GraphHopper.class);
                 bind(graphHopperManaged.getGraphHopper()).to(GraphHopperAPI.class);
 

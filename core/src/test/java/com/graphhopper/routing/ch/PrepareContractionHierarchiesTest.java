@@ -44,7 +44,7 @@ import static org.junit.Assert.*;
  * @author Peter Karich
  */
 public class PrepareContractionHierarchiesTest {
-    private final CarFlagEncoder carEncoder = new CarFlagEncoder("speed_two_directions=true");
+    private final CarFlagEncoder carEncoder = new CarFlagEncoder(new PMap("speed_two_directions=true"));
     private final EncodingManager encodingManager = EncodingManager.create(carEncoder);
     private final Weighting weighting = new ShortestWeighting(carEncoder);
     private final CHProfile chProfile = CHProfile.nodeBased(weighting);
@@ -468,7 +468,7 @@ public class PrepareContractionHierarchiesTest {
         qr.setSnappedPosition(QueryResult.Position.EDGE);
         qr.setClosestNode(8);
         qr.setWayIndex(0);
-        qr.calcSnappedPoint(new DistanceCalc2D());
+        qr.calcSnappedPoint(new DistanceCalcEuclidean());
         QueryGraph queryGraph = QueryGraph.lookup(lg, qr);
 
         // we make sure our weight fine tunings do what they are supposed to
