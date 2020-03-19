@@ -17,10 +17,10 @@
  */
 package com.graphhopper.routing.util;
 
-import com.graphhopper.reader.OSMTurnRelation;
 import com.graphhopper.reader.ReaderWay;
 import com.graphhopper.routing.profiles.EncodedValue;
 import com.graphhopper.routing.profiles.UnsignedDecimalEncodedValue;
+import com.graphhopper.routing.util.spatialrules.TransportationMode;
 import com.graphhopper.storage.IntsRef;
 import com.graphhopper.util.Helper;
 import com.graphhopper.util.PMap;
@@ -54,16 +54,14 @@ public class BusFlagEncoder extends AbstractFlagEncoder {
     }
 
     public BusFlagEncoder(PMap properties) {
-        this((int) properties.getLong("speed_bits", 5),
+        this(properties.getInt("speed_bits", 5),
                 properties.getDouble("speed_factor", 5),
                 properties.getBool("turn_costs", false) ? 1 : 0);
-        this.speedTwoDirections = properties.getBool("speed_two_directions", false);
-        this.setBlockFords(properties.getBool("block_fords", true));
-        this.setBlockByDefault(properties.getBool("block_barriers", true));        
-    }
 
-    public BusFlagEncoder(String propertiesStr) {
-        this(new PMap(propertiesStr));
+        blockPrivate(properties.getBool("block_private", true));
+        blockFords(properties.getBool("block_fords", false));
+        blockBarriersByDefault(properties.getBool("block_barriers", true));
+        speedTwoDirections = properties.getBool("speed_two_directions", false);
     }
 
     public BusFlagEncoder(int speedBits, double speedFactor, int maxTurnCosts) {
@@ -85,6 +83,7 @@ public class BusFlagEncoder extends AbstractFlagEncoder {
         potentialBarriers.add("kissing_gate");
         potentialBarriers.add("swing_gate");
 
+        // absoluteBarriers.add("fence"); // Allow       
         absoluteBarriers.add("bollard");
         absoluteBarriers.add("stile");
         absoluteBarriers.add("turnstile");
@@ -140,6 +139,10 @@ public class BusFlagEncoder extends AbstractFlagEncoder {
         speedDefault = defaultSpeedMap.get("secondary");
     }
 
+    public TransportationMode getTransportationMode() {
+        return TransportationMode.MOTOR_VEHICLE;
+    }
+    
     @Override
     public int getVersion() {
         return 2;
@@ -158,7 +161,7 @@ public class BusFlagEncoder extends AbstractFlagEncoder {
     protected double getSpeed(ReaderWay way) {
         String highwayValue = way.getTag("highway");
         if (!Helper.isEmpty(highwayValue) && way.hasTag("motorroad", "yes")
-                && highwayValue != "motorway" && highwayValue != "motorway_link") {
+                && !"motorway".equals(highwayValue) && !"motorway_link".equals(highwayValue)) {
             highwayValue = "motorroad";
         }
         Integer speed = defaultSpeedMap.get(highwayValue);
