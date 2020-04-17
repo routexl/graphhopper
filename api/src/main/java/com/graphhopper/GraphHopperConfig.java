@@ -43,6 +43,13 @@ public class GraphHopperConfig {
         this(new PMap());
     }
 
+    public GraphHopperConfig(GraphHopperConfig otherConfig) {
+        map = new PMap(otherConfig.map);
+        profiles = new ArrayList<>(otherConfig.profiles);
+        chProfiles = new ArrayList<>(otherConfig.chProfiles);
+        lmProfiles = new ArrayList<>(otherConfig.lmProfiles);
+    }
+
     public GraphHopperConfig(PMap pMap) {
         this.map = pMap;
     }
@@ -74,7 +81,7 @@ public class GraphHopperConfig {
         return this;
     }
 
-    public GraphHopperConfig put(String key, Object value) {
+    public GraphHopperConfig putObject(String key, Object value) {
         map.putObject(key, value);
         return this;
     }

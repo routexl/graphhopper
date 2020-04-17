@@ -96,6 +96,9 @@ public class LandmarkStorage implements Storable<LandmarkStorage> {
         this.minimumNodes = Math.min(graph.getNodes() / 2, 500_000);
         this.lmProfile = lmProfile;
         this.weighting = lmProfile.getWeighting();
+        if (weighting.hasTurnCosts()) {
+            throw new IllegalArgumentException("Landmark preparation cannot be used with weightings returning turn costs, because this can lead to wrong results during the (node-based) landmark calculation, see #1960");
+        }
         this.encoder = weighting.getFlagEncoder();
         // allowing arbitrary weighting is too dangerous
         this.lmSelectionWeighting = new ShortestWeighting(encoder) {
@@ -255,7 +258,7 @@ public class LandmarkStorage implements Storable<LandmarkStorage> {
         IntHashSet blockedEdges = new IntHashSet();
 
         // the ruleLookup splits certain areas from each other but avoids making this a permanent change so that other algorithms still can route through these regions.
-        if (ruleLookup != null && ruleLookup.size() > 0) {
+        if (ruleLookup != null && !ruleLookup.getRules().isEmpty()) {
             StopWatch sw = new StopWatch().start();
             blockedEdges = findBorderEdgeIds(ruleLookup);
             tarjanFilter = new BlockedEdgesFilter(encoder.getAccessEnc(), true, false, blockedEdges);
@@ -290,7 +293,7 @@ public class LandmarkStorage implements Storable<LandmarkStorage> {
                     GHPoint p = createPoint(graph, nextStartNode);
                     if (logDetails)
                         LOGGER.info("start node: " + nextStartNode + " (" + p + ") subnetwork size: " + subnetworkIds.size()
-                                + ", " + Helper.getMemInfo() + ((ruleLookup == null) ? "" : " area:" + ruleLookup.lookupRule(p).getId()));
+                                + ", " + Helper.getMemInfo() + ((ruleLookup == null) ? "" : " area:" + ruleLookup.lookupRules(p.lat, p.lon).getRules()));
 
                     if (createLandmarksForSubnetwork(nextStartNode, subnetworks, blockedEdges))
                         break;
@@ -461,10 +464,10 @@ public class LandmarkStorage implements Storable<LandmarkStorage> {
         IntHashSet inaccessible = new IntHashSet();
         while (allEdgesIterator.next()) {
             int adjNode = allEdgesIterator.getAdjNode();
-            SpatialRule ruleAdj = ruleLookup.lookupRule(nodeAccess.getLatitude(adjNode), nodeAccess.getLongitude(adjNode));
+            SpatialRule ruleAdj = ruleLookup.lookupRules(nodeAccess.getLatitude(adjNode), nodeAccess.getLongitude(adjNode)).getRules().get(0);
 
             int baseNode = allEdgesIterator.getBaseNode();
-            SpatialRule ruleBase = ruleLookup.lookupRule(nodeAccess.getLatitude(baseNode), nodeAccess.getLongitude(baseNode));
+            SpatialRule ruleBase = ruleLookup.lookupRules(nodeAccess.getLatitude(baseNode), nodeAccess.getLongitude(baseNode)).getRules().get(0);
             if (ruleAdj != ruleBase) {
                 inaccessible.add(allEdgesIterator.getEdge());
             }
@@ -817,7 +820,7 @@ public class LandmarkStorage implements Storable<LandmarkStorage> {
             if ((double) maxedout.get() / map.size() > 0.1) {
                 LOGGER.warn("landmark " + lmIdx + " (" + nodeAccess.getLatitude(lmNodeId) + "," + nodeAccess.getLongitude(lmNodeId) + "): " +
                         "too many weights were maxed out (" + maxedout.get() + "/" + map.size() + "). Use a bigger factor than " + lms.factor
-                        + ". For example use the following in the config.yml: weighting=" + weighting.getName() + "|maximum=" + finalMaxWeight.getValue() * 1.2);
+                        + ". For example use maximum_lm_weight: " + finalMaxWeight.getValue() * 1.2 + " in your LM profile definition");
             }
         }
     }
