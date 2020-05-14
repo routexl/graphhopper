@@ -22,7 +22,7 @@ import com.graphhopper.reader.ReaderNode;
 import com.graphhopper.reader.ReaderWay;
 import com.graphhopper.reader.osm.conditional.ConditionalOSMTagInspector;
 import com.graphhopper.reader.osm.conditional.DateRangeParser;
-import com.graphhopper.routing.profiles.*;
+import com.graphhopper.routing.ev.*;
 import com.graphhopper.storage.IntsRef;
 import com.graphhopper.util.*;
 import org.slf4j.Logger;
@@ -77,10 +77,6 @@ public abstract class AbstractFlagEncoder implements FlagEncoder {
 
     public AbstractFlagEncoder(PMap properties) {
         throw new RuntimeException("This method must be overridden in derived classes");
-    }
-
-    public AbstractFlagEncoder(String propertiesStr) {
-        this(new PMap(propertiesStr));
     }
 
     /**
@@ -469,6 +465,11 @@ public abstract class AbstractFlagEncoder implements FlagEncoder {
 
     protected String getPropertiesString() {
         return "speed_factor=" + speedFactor + "|speed_bits=" + speedBits + "|turn_costs=" + (maxTurnCosts > 0);
+    }
+
+    @Override
+    public List<EncodedValue> getAllShared() {
+        return encodedValueLookup.getAllShared();
     }
 
     @Override
