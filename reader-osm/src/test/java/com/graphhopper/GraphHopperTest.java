@@ -60,7 +60,7 @@ import static java.util.Arrays.asList;
 /**
  * @author Peter Karich
  */
-public class GraphHopperIT {
+public class GraphHopperTest {
 
     public static final String DIR = "../core/files";
 
@@ -71,9 +71,10 @@ public class GraphHopperIT {
     private static final String LAUF = DIR + "/Laufamholzstrasse.osm.xml";
     private static final String MONACO = DIR + "/monaco.osm.gz";
     private static final String MOSCOW = DIR + "/moscow.osm.gz";
+    private static final String ESSEN = DIR + "/edge_based_subnetwork.osm.xml.gz";
 
     // when creating GH instances make sure to use this as the GH location such that it will be cleaned between tests
-    private static final String GH_LOCATION = "target/graphhopper-it-gh";
+    private static final String GH_LOCATION = "target/graphhopper-test-gh";
 
     @BeforeEach
     @AfterEach
@@ -87,8 +88,8 @@ public class GraphHopperIT {
             ASTAR + ",false,439",
             DIJKSTRA_BI + ",false,208",
             ASTAR_BI + ",false,172",
-            DIJKSTRA_BI + ",true,29",
-            ASTAR_BI + ",true,29"
+            ASTAR_BI + ",true,33",
+            DIJKSTRA_BI + ",true,30"
     })
     public void testMonacoDifferentAlgorithms(String algo, boolean withCH, int expectedVisitedNodes) {
         final String vehicle = "car";
@@ -100,6 +101,7 @@ public class GraphHopperIT {
         hopper.getCHPreparationHandler()
                 .setCHProfiles(new CHProfile("profile"))
                 .setDisablingAllowed(true);
+        hopper.setMinNetworkSize(0);
         hopper.importOrLoad();
         GHRequest req = new GHRequest(43.727687, 7.418737, 43.74958, 7.436566)
                 .setAlgorithm(algo)
@@ -1090,6 +1092,7 @@ public class GraphHopperIT {
                 new CHProfile(profile1),
                 new CHProfile(profile2)
         );
+        hopper.setMinNetworkSize(0);
         hopper.importOrLoad();
 
         assertEquals(2, hopper.getCHPreparationHandler().getPreparations().size());
@@ -1134,6 +1137,7 @@ public class GraphHopperIT {
                 new CHProfile(profile1),
                 new CHProfile(profile2)
         );
+        hopper.setMinNetworkSize(0);
         hopper.importOrLoad();
 
         assertEquals(2, hopper.getCHPreparationHandler().getPreparations().size());
@@ -1400,6 +1404,7 @@ public class GraphHopperIT {
                         new LMProfile(profile3).setPreparationProfile(profile1)
                 ).
                 setDisablingAllowed(true);
+        hopper.setMinNetworkSize(0);
         hopper.importOrLoad();
 
         // flex
@@ -1740,6 +1745,38 @@ public class GraphHopperIT {
         req.setProfile(profile);
         GHResponse rsp = hopper.route(req);
         assertEquals("there should not be an error, but was: " + rsp.getErrors(), 0, rsp.getErrors().size());
+    }
+
+    @Test
+    public void testOneWaySubnetwork_issue1807() {
+        // There is a straight-only turn relation at the junction of Franziskastraße and Gudulastraße, which restricts
+        // turning onto Gudulastraße. However, Gudulastraße can also not be accessed from the south/west, because
+        // its a one-way. This creates a subnetwork that is not accessible at all. We can only detect this if we
+        // consider the turn restrictions during the subnetwork search.
+        GraphHopper hopper = createGraphHopper("foot,car|turn_costs=true").
+                setOSMFile(ESSEN).
+                setMinNetworkSize(50).
+                setProfiles(
+                        new Profile("foot").setVehicle("foot").setWeighting("fastest"),
+                        new Profile("car").setVehicle("car").setWeighting("fastest").setTurnCosts(true)
+                );
+
+        hopper.importOrLoad();
+        GHPoint p = new GHPoint(51.433417, 7.009395);
+        GHPoint q = new GHPoint(51.432872, 7.010066);
+        GHRequest req = new GHRequest(p, q);
+        // using the foot profile we do not care about the turn restriction
+        req.setProfile("foot");
+        GHResponse rsp = hopper.route(req);
+        assertFalse(rsp.hasErrors(), rsp.getErrors().toString());
+        assertEquals(86, rsp.getBest().getDistance(), 1);
+
+        // Using the car profile there is no way we can reach the destination and the subnetwork is supposed to be removed
+        // such that the destination snaps to a point that can be reached.
+        req.setProfile("car");
+        rsp = hopper.route(req);
+        assertFalse(rsp.hasErrors(), rsp.getErrors().toString());
+        assertEquals(658, rsp.getBest().getDistance(), 1);
     }
 
     @Test
