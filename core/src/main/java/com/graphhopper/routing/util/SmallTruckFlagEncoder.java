@@ -18,8 +18,8 @@
 package com.graphhopper.routing.util;
 
 import com.graphhopper.reader.ReaderWay;
-import com.graphhopper.routing.profiles.EncodedValue;
-import com.graphhopper.routing.profiles.UnsignedDecimalEncodedValue;
+import com.graphhopper.routing.ev.EncodedValue;
+import com.graphhopper.routing.ev.UnsignedDecimalEncodedValue;
 import com.graphhopper.routing.util.spatialrules.TransportationMode;
 import com.graphhopper.storage.IntsRef;
 import com.graphhopper.util.Helper;
@@ -38,11 +38,10 @@ import java.util.*;
 public class SmallTruckFlagEncoder extends AbstractFlagEncoder {
     protected final Map<String, Integer> trackTypeSpeedMap = new HashMap<>();
     protected final Set<String> badSurfaceSpeedMap = new HashSet<>();
-
+    private boolean speedTwoDirections;
     // This value determines the maximal possible on roads with bad surfaces
     protected int badSurfaceSpeed;
 
-    protected boolean speedTwoDirections;
     /**
      * A map which associates string to speed. Get some impression:
      * http://www.itoworld.com/map/124#fullscreen
@@ -62,7 +61,7 @@ public class SmallTruckFlagEncoder extends AbstractFlagEncoder {
         blockPrivate(properties.getBool("block_private", true));
         blockFords(properties.getBool("block_fords", false));
         blockBarriersByDefault(properties.getBool("block_barriers", true));
-        speedTwoDirections = properties.getBool("speed_two_directions", false);
+        setSpeedTwoDirections(properties.getBool("speed_two_directions", false));
     }
     
     public SmallTruckFlagEncoder(int speedBits, double speedFactor, int maxTurnCosts) {
@@ -143,6 +142,11 @@ public class SmallTruckFlagEncoder extends AbstractFlagEncoder {
         badSurfaceSpeed = 25;
         maxPossibleSpeed = 100;
         speedDefault = defaultSpeedMap.get("secondary");
+    }
+
+    public SmallTruckFlagEncoder setSpeedTwoDirections(boolean value) {
+        speedTwoDirections = value;
+        return this;
     }
     
     public TransportationMode getTransportationMode() {
