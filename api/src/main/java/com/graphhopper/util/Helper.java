@@ -17,11 +17,7 @@
  */
 package com.graphhopper.util;
 
-import com.graphhopper.util.shapes.BBox;
-
 import java.io.*;
-import java.lang.management.GarbageCollectorMXBean;
-import java.lang.management.ManagementFactory;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.charset.Charset;
@@ -35,9 +31,6 @@ import java.util.Map.Entry;
  * @author Peter Karich
  */
 public class Helper {
-    public static final DistanceCalc DIST_EARTH = new DistanceCalcEarth();
-    public static final DistancePlaneProjection DIST_PLANE = new DistancePlaneProjection();
-    public static final AngleCalc ANGLE_CALC = new AngleCalc();
     public static final Charset UTF_CS = Charset.forName("UTF-8");
     public static final TimeZone UTC = TimeZone.getTimeZone("UTC");
     public static final long MB = 1L << 20;
@@ -174,29 +167,6 @@ public class Helper {
         return "totalMB:" + getTotalMB() + ", usedMB:" + getUsedMB();
     }
 
-    public static int getUsedMBAfterGC() {
-        long before = getTotalGcCount();
-        // trigger gc
-        System.gc();
-        while (getTotalGcCount() == before) {
-            // wait for the gc to have completed
-        }
-        long result = (ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().getUsed() +
-                ManagementFactory.getMemoryMXBean().getNonHeapMemoryUsage().getUsed()) / (1024 * 1024);
-        return (int) result;
-    }
-
-    private static long getTotalGcCount() {
-        long sum = 0;
-        for (GarbageCollectorMXBean b : ManagementFactory.getGarbageCollectorMXBeans()) {
-            long count = b.getCollectionCount();
-            if (count != -1) {
-                sum += count;
-            }
-        }
-        return sum;
-    }
-
     public static int getSizeOfObjectRef(int factor) {
         // pointer to class, flags, lock
         return factor * (4 + 4 + 4);
@@ -237,17 +207,6 @@ public class Helper {
             }
         }
         return false;
-    }
-
-    public static int calcIndexSize(BBox graphBounds) {
-        if (!graphBounds.isValid())
-            throw new IllegalArgumentException("Bounding box is not valid to calculate index size: " + graphBounds);
-
-        double dist = DIST_EARTH.calcDist(graphBounds.maxLat, graphBounds.minLon,
-                graphBounds.minLat, graphBounds.maxLon);
-        // convert to km and maximum is 50000km => 1GB
-        dist = Math.min(dist / 1000, 50000);
-        return Math.max(2000, (int) (dist * dist));
     }
 
     public static String pruneFileEnd(String file) {
@@ -359,23 +318,24 @@ public class Helper {
     }
 
     /**
-     * Round the value to the specified exponent
+     * Round the value to the specified number of decimal places, i.e. decimalPlaces=2 means we round to two decimal
+     * places. Using negative values like decimalPlaces=-2 means we round to two places before the decimal point.
      */
-    public static double round(double value, int exponent) {
-        double factor = Math.pow(10, exponent);
+    public static double round(double value, int decimalPlaces) {
+        double factor = Math.pow(10, decimalPlaces);
         return Math.round(value * factor) / factor;
     }
 
     public static double round6(double value) {
-        return Math.round(value * 1e6) / 1e6;
+        return round(value, 6);
     }
 
     public static double round4(double value) {
-        return Math.round(value * 1e4) / 1e4;
+        return round(value, 4);
     }
 
     public static double round2(double value) {
-        return Math.round(value * 100) / 100d;
+        return round(value, 2);
     }
 
     /**

@@ -17,7 +17,8 @@ graphhopper:
 
   # Add additional information to every edge. Used for path details (#1548), better instructions (#1844) and tunnel/bridge interpolation (#798).
   # Default values are: road_class,road_class_link,road_environment,max_speed,road_access (since #1805)
-  # More are: surface,max_width,max_height,max_weight,max_axle_load,max_length,hazmat,hazmat_tunnel,hazmat_water,toll,track_type
+  # More are: surface,max_width,max_height,max_weight,max_axle_load,max_length,hazmat,hazmat_tunnel,hazmat_water,toll,track_type,
+  #           mtb_rating, hiking_rating, horse_rating
   # graph.encoded_values: surface,toll,track_type
 
   ##### Routing Profiles ####
@@ -91,6 +92,19 @@ graphhopper:
   # If you have a slow disk or plenty of RAM change the default MMAP to:
   # graph.elevation.dataaccess: RAM_STORE
 
+
+  # To enable bilinear interpolation when sampling elevation at points (default uses nearest neighbor):
+  # graph.elevation.interpolate: bilinear
+
+
+  # To increase elevation profile resolution, use the following two parameters to tune the extra resolution you need
+  # against the additional storage space used for edge geometries. You should enable bilinear interpolation when using
+  # these features (see #1953 for details).
+  # - first, set the distance (in meters) at which elevation samples should be taken on long edges
+  # graph.elevation.long_edge_sampling_distance: 60
+  # - second, set the elevation tolerance (in meters) to use when simplifying polylines since the default ignores
+  #   elevation and will remove the extra points that long edge sampling added
+  # graph.elevation.way_point_max_distance: 10
 
 
   #### Speed, hybrid and flexible mode ####

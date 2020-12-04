@@ -25,8 +25,6 @@ import com.graphhopper.config.CHProfile;
 import com.graphhopper.config.LMProfile;
 import com.graphhopper.config.Profile;
 import com.graphhopper.reader.osm.GraphHopperOSM;
-import com.graphhopper.routing.ch.CHPreparationHandler;
-import com.graphhopper.routing.lm.LMPreparationHandler;
 import com.graphhopper.storage.Graph;
 import com.graphhopper.storage.NodeAccess;
 import com.graphhopper.util.*;
@@ -110,8 +108,9 @@ public class CHMeasurement {
                     new Profile(profile).setVehicle("car").setWeighting("fastest").setTurnCosts(false)
             ));
         }
-        CHPreparationHandler chHandler = graphHopper.getCHPreparationHandler();
-        chHandler.setDisablingAllowed(true);
+        graphHopper.getRouterConfig().setCHDisablingAllowed(true);
+        graphHopper.getRouterConfig().setLMDisablingAllowed(true);
+
         ghConfig.putObject(PERIODIC_UPDATES, periodicUpdates);
         ghConfig.putObject(LAST_LAZY_NODES_UPDATES, lazyUpdates);
         ghConfig.putObject(NEIGHBOR_UPDATES, neighborUpdates);
@@ -123,9 +122,6 @@ public class CHMeasurement {
         ghConfig.putObject(SIGMA_FACTOR, sigmaFactor);
         ghConfig.putObject(MIN_MAX_SETTLED_EDGES, minMaxSettledEdges);
         ghConfig.putObject(SETTLED_EDGES_RESET_INTERVAL, resetInterval);
-
-        LMPreparationHandler lmHandler = graphHopper.getLMPreparationHandler();
-        lmHandler.setDisablingAllowed(true);
 
         LOGGER.info("Initializing graph hopper with args: {}", ghConfig);
         graphHopper.init(ghConfig);
@@ -216,7 +212,8 @@ public class CHMeasurement {
         final NodeAccess nodeAccess = g.getNodeAccess();
         final Random random = new Random(seed);
 
-        MiniPerfTest compareTest = new MiniPerfTest() {
+        MiniPerfTest compareTest = new MiniPerfTest();
+        compareTest.setIterations(iterations).start(new MiniPerfTest.Task() {
             long chTime = 0;
             long noChTime = 0;
             long chErrors = 0;
@@ -288,8 +285,7 @@ public class CHMeasurement {
                 }
                 return chRoute.getErrors().size();
             }
-        };
-        compareTest.setIterations(iterations).start();
+        });
     }
 
     private static void runPerformanceTest(final String algo, final GraphHopper graphHopper, final boolean withTurnCosts,
@@ -302,7 +298,8 @@ public class CHMeasurement {
 
         LOGGER.info("Running performance test for {}, seed = {}", algo, seed);
         final long[] numVisitedNodes = {0};
-        MiniPerfTest performanceTest = new MiniPerfTest() {
+        MiniPerfTest performanceTest = new MiniPerfTest();
+        performanceTest.setIterations(iterations).start(new MiniPerfTest.Task() {
             private long queryTime;
 
             @Override
@@ -333,8 +330,7 @@ public class CHMeasurement {
                     queryTime += nanoTime() - start;
                 return getRealErrors(route).size();
             }
-        };
-        performanceTest.setIterations(iterations).start();
+        });
         if (performanceTest.getDummySum() > 0.01 * iterations) {
             throw new IllegalStateException("too many errors, probably something is wrong");
         }

@@ -23,6 +23,7 @@ import com.graphhopper.reader.ReaderWay;
 import com.graphhopper.routing.ev.*;
 import com.graphhopper.routing.util.CarFlagEncoder;
 import com.graphhopper.routing.util.EncodingManager;
+import com.graphhopper.routing.util.TransportationMode;
 import com.graphhopper.routing.util.parsers.SpatialRuleParser;
 import com.graphhopper.routing.util.spatialrules.countries.GermanySpatialRule;
 import com.graphhopper.storage.Graph;
@@ -52,40 +53,49 @@ import static org.junit.Assert.assertEquals;
  */
 public class SpatialRuleLookupBuilderTest {
 
-    private static final String COUNTRIES_FILE = "../core/files/spatialrules/countries.geo.json";
+    private static final String COUNTRIES_FILE = "../core/files/spatialrules/countries.geojson";
+
+    private static SpatialRuleLookup createLookup() throws IOException {
+        return createLookup(new Envelope(-180, 180, -90, 90));
+    }
+    
+    private static SpatialRuleLookup createLookup(Envelope maxBounds) throws IOException {
+        final FileReader reader = new FileReader(COUNTRIES_FILE);
+        List<JsonFeatureCollection> feats = Collections.singletonList(
+                        Jackson.newObjectMapper().readValue(reader, JsonFeatureCollection.class));
+        return SpatialRuleLookupBuilder.buildIndex(feats, "ISO3166-1:alpha3", new CountriesSpatialRuleFactory());
+    }
 
     @Test
     public void testIndex() throws IOException {
-        final FileReader reader = new FileReader(COUNTRIES_FILE);
-        SpatialRuleLookup spatialRuleLookup = SpatialRuleLookupBuilder.buildIndex(Collections.singletonList(
-                Jackson.newObjectMapper().readValue(reader, JsonFeatureCollection.class)), "ISO_A3", new CountriesSpatialRuleFactory());
+        SpatialRuleLookup spatialRuleLookup = createLookup();
 
         // Berlin
         assertEquals(RoadAccess.DESTINATION, spatialRuleLookup.lookupRules(52.5243700, 13.4105300).
-                getAccess(RoadClass.TRACK, TransportationMode.MOTOR_VEHICLE, RoadAccess.YES));
+                getAccess(RoadClass.TRACK, TransportationMode.CAR, RoadAccess.YES));
         assertEquals(RoadAccess.YES, spatialRuleLookup.lookupRules(52.5243700, 13.4105300).
-                getAccess(RoadClass.PRIMARY, TransportationMode.MOTOR_VEHICLE, RoadAccess.YES));
+                getAccess(RoadClass.PRIMARY, TransportationMode.CAR, RoadAccess.YES));
 
         // Paris -> empty rule
         assertEquals(RoadAccess.YES, spatialRuleLookup.lookupRules(48.864716, 2.349014).
-                getAccess(RoadClass.TRACK, TransportationMode.MOTOR_VEHICLE, RoadAccess.YES));
+                getAccess(RoadClass.TRACK, TransportationMode.CAR, RoadAccess.YES));
         assertEquals(RoadAccess.YES, spatialRuleLookup.lookupRules(48.864716, 2.349014).
-                getAccess(RoadClass.PRIMARY, TransportationMode.MOTOR_VEHICLE, RoadAccess.YES));
+                getAccess(RoadClass.PRIMARY, TransportationMode.CAR, RoadAccess.YES));
 
         // Austria
         assertEquals(RoadAccess.FORESTRY, spatialRuleLookup.lookupRules(48.204484, 16.107888).
-                getAccess(RoadClass.TRACK, TransportationMode.MOTOR_VEHICLE, RoadAccess.YES));
+                getAccess(RoadClass.TRACK, TransportationMode.CAR, RoadAccess.YES));
         assertEquals(RoadAccess.YES, spatialRuleLookup.lookupRules(48.210033, 16.363449).
-                getAccess(RoadClass.PRIMARY, TransportationMode.MOTOR_VEHICLE, RoadAccess.YES));
+                getAccess(RoadClass.PRIMARY, TransportationMode.CAR, RoadAccess.YES));
         assertEquals(RoadAccess.DESTINATION, spatialRuleLookup.lookupRules(48.210033, 16.363449).
-                getAccess(RoadClass.LIVING_STREET, TransportationMode.MOTOR_VEHICLE, RoadAccess.YES));
+                getAccess(RoadClass.LIVING_STREET, TransportationMode.CAR, RoadAccess.YES));
     }
 
     @Test
     public void testBounds() throws IOException {
         final FileReader reader = new FileReader(COUNTRIES_FILE);
         SpatialRuleLookup spatialRuleLookup = SpatialRuleLookupBuilder.buildIndex(Collections.singletonList(
-                Jackson.newObjectMapper().readValue(reader, JsonFeatureCollection.class)), "ISO_A3", new CountriesSpatialRuleFactory());
+                Jackson.newObjectMapper().readValue(reader, JsonFeatureCollection.class)), "ISO3166-1:alpha3", new CountriesSpatialRuleFactory());
         Envelope almostWorldWide = new Envelope(-179, 179, -89, 89);
 
         // Might fail if a polygon is defined outside the above coordinates
@@ -100,7 +110,7 @@ public class SpatialRuleLookupBuilderTest {
         */
         final FileReader reader = new FileReader(COUNTRIES_FILE);
         SpatialRuleLookup spatialRuleLookup = SpatialRuleLookupBuilder.buildIndex(Collections.singletonList(
-                Jackson.newObjectMapper().readValue(reader, JsonFeatureCollection.class)), "ISO_A3",
+                Jackson.newObjectMapper().readValue(reader, JsonFeatureCollection.class)), "ISO3166-1:alpha3",
                 new CountriesSpatialRuleFactory(), new Envelope(9, 10, 51, 52));
         assertFalse("BBox seems to be incorrectly contracted", spatialRuleLookup.getBounds().contains(49.9, 8.9));
     }
@@ -109,7 +119,7 @@ public class SpatialRuleLookupBuilderTest {
     public void testNoIntersection() throws IOException {
         final FileReader reader = new FileReader(COUNTRIES_FILE);
         SpatialRuleLookup spatialRuleLookup = SpatialRuleLookupBuilder.buildIndex(Collections.singletonList(
-                Jackson.newObjectMapper().readValue(reader, JsonFeatureCollection.class)), "ISO_A3",
+                Jackson.newObjectMapper().readValue(reader, JsonFeatureCollection.class)), "ISO3166-1:alpha3",
                 new CountriesSpatialRuleFactory(), new Envelope(-180, -179, -90, -89));
         assertEquals(SpatialRuleLookup.EMPTY, spatialRuleLookup);
     }

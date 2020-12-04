@@ -88,7 +88,8 @@ public class PathMerger {
         return this;
     }
 
-    public void doWork(ResponsePath responsePath, List<Path> paths, EncodedValueLookup evLookup, Translation tr) {
+    public ResponsePath doWork(PointList waypoints, List<Path> paths, EncodedValueLookup evLookup, Translation tr) {
+        ResponsePath responsePath = new ResponsePath();
         int origPoints = 0;
         long fullTimeInMillis = 0;
         double fullWeight = 0;
@@ -142,8 +143,7 @@ public class PathMerger {
         }
 
         if (!fullPoints.isEmpty()) {
-            String debug = responsePath.getDebugInfo() + ", simplify (" + origPoints + "->" + fullPoints.getSize() + ")";
-            responsePath.addDebugInfo(debug);
+            responsePath.addDebugInfo("simplify (" + origPoints + "->" + fullPoints.getSize() + ")");
             if (fullPoints.is3D)
                 calcAscendDescend(responsePath, fullPoints);
         }
@@ -161,11 +161,13 @@ public class PathMerger {
                 setPoints(fullPoints).
                 setRouteWeight(fullWeight).
                 setDistance(fullDistance).
-                setTime(fullTimeInMillis);
+                setTime(fullTimeInMillis).
+                setWaypoints(waypoints);
 
         if (allFound && simplifyResponse && (calcPoints || enableInstructions)) {
             PathSimplification.simplify(responsePath, douglasPeucker, enableInstructions);
         }
+        return responsePath;
     }
 
     /**

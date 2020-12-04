@@ -18,9 +18,7 @@
 
 package com.graphhopper.routing.weighting.custom;
 
-import com.graphhopper.routing.ev.EnumEncodedValue;
-import com.graphhopper.routing.ev.RoadClass;
-import com.graphhopper.routing.ev.RoadEnvironment;
+import com.graphhopper.routing.ev.*;
 import com.graphhopper.routing.util.CustomModel;
 import com.graphhopper.routing.util.EncodingManager;
 import com.graphhopper.storage.GraphBuilder;
@@ -28,6 +26,7 @@ import com.graphhopper.util.EdgeIteratorState;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -47,7 +46,7 @@ class PriorityCalculatorTest {
     @Test
     public void priority() {
         CustomModel model = new CustomModel();
-        Map<String, Object> map = new HashMap<>();
+        Map<String, Object> map = new LinkedHashMap<>();
         map.put("*", 0.3);
         model.getPriority().put(RoadClass.KEY, map);
         assertEquals(0.3, calcPriority(edge, model));
@@ -65,7 +64,7 @@ class PriorityCalculatorTest {
     @Test
     public void invalidPriority() {
         CustomModel model = new CustomModel();
-        Map<String, Object> map = new HashMap<>();
+        Map<String, Object> map = new LinkedHashMap<>();
         map.put("*", 1.1);
         model.getPriority().put(RoadClass.KEY, map);
         try {
@@ -90,9 +89,9 @@ class PriorityCalculatorTest {
         EnumEncodedValue<RoadEnvironment> roadEnvironment = em.getEnumEncodedValue(RoadEnvironment.KEY, RoadEnvironment.class);
         edge.set(roadClass, RoadClass.PRIMARY);
         edge.set(roadEnvironment, RoadEnvironment.BRIDGE);
-        Map<String, Object> roadClassMap = new HashMap<>();
+        Map<String, Object> roadClassMap = new LinkedHashMap<>();
         roadClassMap.put(RoadClass.PRIMARY.toString(), 0.7);
-        Map<String, Object> roadEnvironmentMap = new HashMap<>();
+        Map<String, Object> roadEnvironmentMap = new LinkedHashMap<>();
         roadEnvironmentMap.put(RoadEnvironment.BRIDGE.toString(), 0.5);
         CustomModel model = new CustomModel();
         model.getPriority().put(RoadClass.KEY, roadClassMap);
@@ -100,9 +99,27 @@ class PriorityCalculatorTest {
         assertEquals(0.35, calcPriority(edge, model));
     }
 
+    @Test
+    public void directionDependent() {
+        EnumEncodedValue<RoadClass> roadClass = em.getEnumEncodedValue(RoadClass.KEY, RoadClass.class);
+        DecimalEncodedValue maxSpeedEnc = em.getDecimalEncodedValue(MaxSpeed.KEY);
+        edge.set(roadClass, RoadClass.PRIMARY);
+        edge.set(maxSpeedEnc, 110);
+        edge.setReverse(maxSpeedEnc, 50);
+
+        Map<String, Object> maxSpeedMap = new LinkedHashMap<>();
+        maxSpeedMap.put("<100", 0.5);
+
+        CustomModel model = new CustomModel();
+        model.getPriority().put(MaxSpeed.KEY, maxSpeedMap);
+        assertEquals(1.0, calcPriority(edge, model));
+
+        PriorityCalculator priorityCalculator = new PriorityCalculator(model, em);
+        assertEquals(0.5, priorityCalculator.calcPriority(edge, true));
+    }
+
     private double calcPriority(EdgeIteratorState edge, CustomModel model) {
         PriorityCalculator priorityCalculator = new PriorityCalculator(model, em);
         return priorityCalculator.calcPriority(edge, false);
     }
-
 }

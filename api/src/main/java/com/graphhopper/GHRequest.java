@@ -153,7 +153,7 @@ public class GHRequest {
     }
 
     public static boolean isAzimuthValue(double heading) {
-        // heading must be in [0, 360) oder NaN
+        // heading must be in [0, 360) or NaN
         return Double.isNaN(heading) || (Double.compare(heading, 360) < 0 && Double.compare(heading, 0) >= 0);
     }
 
@@ -217,10 +217,6 @@ public class GHRequest {
         return pointHints;
     }
 
-    public boolean hasPointHints() {
-        return pointHints.size() == points.size() && !points.isEmpty();
-    }
-
     public GHRequest setCurbsides(List<String> curbsides) {
         this.curbsides = curbsides;
         return this;
@@ -230,17 +226,9 @@ public class GHRequest {
         return curbsides;
     }
 
-    public boolean hasCurbsides() {
-        return curbsides.size() == points.size() && !points.isEmpty();
-    }
-
     public GHRequest setSnapPreventions(List<String> snapPreventions) {
         this.snapPreventions = snapPreventions;
         return this;
-    }
-
-    public boolean hasSnapPreventions() {
-        return !snapPreventions.isEmpty();
     }
 
     public List<String> getSnapPreventions() {

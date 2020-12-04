@@ -21,9 +21,10 @@ import com.graphhopper.GraphHopper;
 import com.graphhopper.GraphHopperConfig;
 import com.graphhopper.config.Profile;
 import com.graphhopper.routing.ev.*;
+import com.graphhopper.routing.util.EncodingManager;
 import com.graphhopper.storage.GraphHopperStorage;
 import com.graphhopper.util.Constants;
-import com.graphhopper.util.shapes.BBox;
+import org.locationtech.jts.geom.Envelope;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -56,16 +57,16 @@ public class InfoResource {
             public ProfileData() {
             }
 
-            public ProfileData(String profileName, String vehicle) {
-                this.profileName = profileName;
+            public ProfileData(String name, String vehicle) {
+                this.name = name;
                 this.vehicle = vehicle;
             }
 
-            public String profileName;
+            public String name;
             public String vehicle;
         }
 
-        public BBox bbox;
+        public Envelope bbox;
         public final List<ProfileData> profiles = new ArrayList<>();
         public List<String> supported_vehicles;
         public String version = Constants.VERSION;
@@ -73,15 +74,12 @@ public class InfoResource {
         public Map<String, List<Object>> encoded_values;
         public String import_date;
         public String data_date;
-        public String prepare_ch_date;
-        public String prepare_date;
     }
 
     @GET
     public Info getInfo() {
         final Info info = new Info();
-        // use bbox always without elevation (for backward compatibility)
-        info.bbox = new BBox(storage.getBounds().minLon, storage.getBounds().maxLon, storage.getBounds().minLat, storage.getBounds().maxLat);
+        info.bbox = new Envelope(storage.getBounds().minLon, storage.getBounds().maxLon, storage.getBounds().minLat, storage.getBounds().maxLat);
         for (Profile p : config.getProfiles()) {
             Info.ProfileData profileData = new Info.ProfileData(p.getName(), p.getVehicle());
             info.profiles.add(profileData);
@@ -97,15 +95,15 @@ public class InfoResource {
         }
         info.import_date = storage.getProperties().get("datareader.import.date");
         info.data_date = storage.getProperties().get("datareader.data.date");
-        info.prepare_ch_date = storage.getProperties().get("prepare.ch.date");
-        info.prepare_date = storage.getProperties().get("prepare.ch.date");
 
         // do not list all supported encoded values like the none-shared ones or *.turn_costs
-        List<EncodedValue> evList = storage.getEncodingManager().getAllShared();
+        List<EncodedValue> evList = storage.getEncodingManager().getEncodedValues();
         info.encoded_values = new LinkedHashMap<>();
         for (EncodedValue encodedValue : evList) {
             List<Object> possibleValueList = new ArrayList<>();
-            if (encodedValue instanceof EnumEncodedValue) {
+            if (!EncodingManager.isSharedEncodedValues(encodedValue)) {
+                // skip
+            } else if (encodedValue instanceof EnumEncodedValue) {
                 for (Object o : ((EnumEncodedValue) encodedValue).getValues()) {
                     possibleValueList.add(o.toString());
                 }

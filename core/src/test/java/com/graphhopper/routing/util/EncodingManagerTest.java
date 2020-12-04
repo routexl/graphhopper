@@ -23,9 +23,10 @@ import com.graphhopper.routing.ev.BooleanEncodedValue;
 import com.graphhopper.routing.ev.EnumEncodedValue;
 import com.graphhopper.routing.ev.Roundabout;
 import com.graphhopper.routing.ev.RouteNetwork;
-import com.graphhopper.routing.util.spatialrules.TransportationMode;
 import com.graphhopper.storage.IntsRef;
 import org.junit.Test;
+
+import java.util.Arrays;
 
 import static org.junit.Assert.*;
 
@@ -84,8 +85,9 @@ public class EncodingManagerTest {
     @Test
     public void testToDetailsStringIncludesEncoderVersionNumber() {
         FlagEncoder encoder = new AbstractFlagEncoder(1, 2.0, 0) {
+            @Override
             public TransportationMode getTransportationMode() {
-                return TransportationMode.BICYCLE;
+                return TransportationMode.BIKE;
             }
 
             @Override
@@ -129,7 +131,7 @@ public class EncodingManagerTest {
         BikeFlagEncoder lessRelationCodes = new BikeFlagEncoder() {
             @Override
             public IntsRef handleWayTags(IntsRef edgeFlags, ReaderWay way, EncodingManager.Access access) {
-                if (bikeRouteEnc.getEnum(false, edgeFlags) != RouteNetwork.OTHER)
+                if (bikeRouteEnc.getEnum(false, edgeFlags) != RouteNetwork.MISSING)
                     priorityEnc.setDecimal(false, edgeFlags, PriorityCode.getFactor(2));
                 return edgeFlags;
             }
@@ -273,6 +275,21 @@ public class EncodingManagerTest {
             if (!encoder.toString().equals("foot"))
                 assertFalse(encoder.toString(), accessEnc.getBool(true, edgeFlags));
             assertTrue(encoder.toString(), roundaboutEnc.getBool(false, edgeFlags));
+        }
+    }
+
+    @Test
+    public void validEV() {
+        for (String str : Arrays.asList("blup_test", "test", "test12", "tes$0", "blup.test", "blup_te.st_")) {
+            assertTrue(str, EncodingManager.isValidEncodedValue(str));
+        }
+
+        for (String str : Arrays.asList("Test", "12test", "test|3", "test{34", "test,21", "täst", "blup.two.three", "blup..test")) {
+            assertFalse(str, EncodingManager.isValidEncodedValue(str));
+        }
+
+        for (String str : Arrays.asList("break", "switch")) {
+            assertFalse(str, EncodingManager.isValidEncodedValue(str));
         }
     }
 }

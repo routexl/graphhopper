@@ -72,23 +72,12 @@ public class PrepareRoutingSubnetworks {
             return;
         }
         StopWatch sw = new StopWatch().start();
-        logger.info("Start removing subnetworks (prepare.min_network_size:" + minNetworkSize + ") " + Helper.getMemInfo());
-        logger.info("Subnetwork removal jobs: " + prepareJobs);
-        logger.info("Graph nodes: " + Helper.nf(ghStorage.getNodes()));
-        logger.info("Graph edges: " + Helper.nf(ghStorage.getEdges()));
+        logger.info("Start removing subnetworks, prepare.min_network_size: " + minNetworkSize + ", nodes: " +
+                Helper.nf(ghStorage.getNodes()) + ", edges: " + Helper.nf(ghStorage.getEdges()) + ", jobs: " + prepareJobs + ", " + Helper.getMemInfo());
         for (PrepareJob job : prepareJobs) {
-            logger.info("--- vehicle: '" + job.name + "'");
-            removeSmallSubNetworks(job.accessEnc, job.turnCostProvider);
+            removeSmallSubNetworks(job);
         }
-        markNodesRemovedIfUnreachable();
-        optimize();
         logger.info("Finished finding and removing subnetworks for " + prepareJobs.size() + " vehicles, took: " + sw.stop().getSeconds() + "s, " + Helper.getMemInfo());
-    }
-
-    private void optimize() {
-        StopWatch sw = new StopWatch().start();
-        ghStorage.optimize();
-        logger.info("Optimized storage after subnetwork removal, took: " + sw.stop().getSeconds() + "s," + Helper.getMemInfo());
     }
 
     /**
@@ -98,14 +87,14 @@ public class PrepareRoutingSubnetworks {
      *
      * @return number of removed edges
      */
-    int removeSmallSubNetworks(BooleanEncodedValue accessEnc, TurnCostProvider turnCostProvider) {
-        if (turnCostProvider == null)
-            return removeSmallSubNetworksNodeBased(accessEnc);
+    int removeSmallSubNetworks(PrepareJob job) {
+        if (job.turnCostProvider == null)
+            return removeSmallSubNetworksNodeBased(job.name, job.accessEnc);
         else
-            return removeSmallSubNetworksEdgeBased(accessEnc, turnCostProvider);
+            return removeSmallSubNetworksEdgeBased(job.name, job.accessEnc, job.turnCostProvider);
     }
 
-    private int removeSmallSubNetworksNodeBased(BooleanEncodedValue accessEnc) {
+    private int removeSmallSubNetworksNodeBased(String jobName, BooleanEncodedValue accessEnc) {
         // partition graph into strongly connected components using Tarjan's algorithm
         StopWatch sw = new StopWatch().start();
         TarjanSCC tarjan = new TarjanSCC(ghStorage, accessEnc, false);
@@ -113,7 +102,7 @@ public class PrepareRoutingSubnetworks {
         List<IntArrayList> components = ccs.getComponents();
         BitSet singleNodeComponents = ccs.getSingleNodeComponents();
         long numSingleNodeComponents = singleNodeComponents.cardinality();
-        logger.info("Found " + ccs.getTotalComponents() + " subnetworks (" + numSingleNodeComponents + " single nodes and "
+        logger.info(jobName + " - Found " + ccs.getTotalComponents() + " subnetworks (" + numSingleNodeComponents + " single nodes and "
                 + components.size() + " components with more than one node, total nodes: " + ccs.getNodes() + "), took: " + sw.stop().getSeconds() + "s");
 
         // remove all small networks, but keep the biggest (even when its smaller than the given min_network_size)
@@ -152,7 +141,7 @@ public class PrepareRoutingSubnetworks {
             throw new IllegalStateException("Too many total edges were removed: " + removedEdges + " out of " + ghStorage.getEdges() + "\n" +
                     "The maximum number of removed edges is: " + allowedRemoved);
 
-        logger.info("Removed " + removedComponents + " subnetworks (biggest removed: " + biggestRemoved + " nodes) -> " +
+        logger.info(jobName + " - Removed " + removedComponents + " subnetworks (biggest removed: " + biggestRemoved + " nodes) -> " +
                 (ccs.getTotalComponents() - removedComponents) + " subnetwork(s) left (smallest: " + smallestRemaining + ", biggest: " + ccs.getBiggestComponent().size() + " nodes)"
                 + ", total removed edges: " + removedEdges + ", took: " + sw.stop().getSeconds() + "s");
         return removedEdges;
@@ -181,7 +170,7 @@ public class PrepareRoutingSubnetworks {
         return removedEdges;
     }
 
-    private int removeSmallSubNetworksEdgeBased(BooleanEncodedValue accessEnc, TurnCostProvider turnCostProvider) {
+    private int removeSmallSubNetworksEdgeBased(String jobName, BooleanEncodedValue accessEnc, TurnCostProvider turnCostProvider) {
         // partition graph into strongly connected components using Tarjan's algorithm
         StopWatch sw = new StopWatch().start();
         EdgeBasedTarjanSCC tarjan = new EdgeBasedTarjanSCC(ghStorage, accessEnc, turnCostProvider, false);
@@ -189,7 +178,7 @@ public class PrepareRoutingSubnetworks {
         List<IntArrayList> components = ccs.getComponents();
         BitSet singleEdgeComponents = ccs.getSingleEdgeComponents();
         long numSingleEdgeComponents = singleEdgeComponents.cardinality();
-        logger.info("Found " + ccs.getTotalComponents() + " subnetworks (" + numSingleEdgeComponents + " single edges and "
+        logger.info(jobName + " - Found " + ccs.getTotalComponents() + " subnetworks (" + numSingleEdgeComponents + " single edges and "
                 + components.size() + " components with more than one edge, total nodes: " + ccs.getEdgeKeys() + "), took: " + sw.stop().getSeconds() + "s");
 
         // n edge-keys roughly equal n/2 edges and components with n/2 edges approximately have n/2 nodes
@@ -234,7 +223,7 @@ public class PrepareRoutingSubnetworks {
             throw new IllegalStateException("Too many total (directed) edges were removed: " + removedEdgeKeys + " out of " + (2 * ghStorage.getEdges()) + "\n" +
                     "The maximum number of removed edges is: " + (2 * allowedRemoved));
 
-        logger.info("Removed " + removedComponents + " subnetworks (biggest removed: " + biggestRemoved + " edges) -> " +
+        logger.info(jobName + " - Removed " + removedComponents + " subnetworks (biggest removed: " + biggestRemoved + " edges) -> " +
                 (ccs.getTotalComponents() - removedComponents) + " subnetwork(s) left (smallest: " + smallestRemaining + ", biggest: " + ccs.getBiggestComponent().size() + " edges)"
                 + ", total removed edges: " + removedEdgeKeys + ", took: " + sw.stop().getSeconds() + "s");
         return removedEdgeKeys;
@@ -252,23 +241,6 @@ public class PrepareRoutingSubnetworks {
             return 1;
         }
         return 0;
-    }
-
-    /**
-     * Removes nodes if all edges are not accessible. I.e. removes zero degree nodes. Note that so far we are not
-     * removing any edges entirely from the graph (we could probably do this for edges that are blocked for *all*
-     * vehicles.
-     */
-    void markNodesRemovedIfUnreachable() {
-        EdgeExplorer edgeExplorer = ghStorage.createEdgeExplorer();
-        int removedNodes = 0;
-        for (int nodeIndex = 0; nodeIndex < ghStorage.getNodes(); nodeIndex++) {
-            if (detectNodeRemovedForAllEncoders(edgeExplorer, nodeIndex)) {
-                ghStorage.markNodeRemoved(nodeIndex);
-                removedNodes++;
-            }
-        }
-        logger.info("Removed " + removedNodes + " nodes from the graph as they aren't used by any vehicle after removing subnetworks");
     }
 
     /**

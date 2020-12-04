@@ -1,8 +1,10 @@
 package com.graphhopper.routing;
 
+import com.graphhopper.routing.ch.CHRoutingAlgorithmFactory;
 import com.graphhopper.routing.ch.PrepareContractionHierarchies;
 import com.graphhopper.routing.ev.DecimalEncodedValue;
 import com.graphhopper.routing.querygraph.QueryGraph;
+import com.graphhopper.routing.querygraph.QueryRoutingCHGraph;
 import com.graphhopper.routing.util.CarFlagEncoder;
 import com.graphhopper.routing.util.EdgeFilter;
 import com.graphhopper.routing.util.EncodingManager;
@@ -10,12 +12,11 @@ import com.graphhopper.routing.util.TraversalMode;
 import com.graphhopper.routing.weighting.Weighting;
 import com.graphhopper.storage.*;
 import com.graphhopper.storage.index.LocationIndexTree;
-import com.graphhopper.storage.index.QueryResult;
+import com.graphhopper.storage.index.Snap;
 import com.graphhopper.util.EdgeIteratorState;
 import com.graphhopper.util.GHUtility;
 import com.graphhopper.util.Helper;
 import com.graphhopper.util.PMap;
-import com.graphhopper.util.shapes.BBox;
 import org.junit.Assume;
 import org.junit.Before;
 import org.junit.Test;
@@ -25,6 +26,7 @@ import org.junit.runners.Parameterized;
 import java.util.*;
 
 import static com.graphhopper.routing.weighting.Weighting.INFINITE_U_TURN_COSTS;
+import static com.graphhopper.util.GHUtility.createRandomSnaps;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;
 
@@ -137,7 +139,7 @@ public class RandomCHRoutingTest {
         locationIndex.prepareIndex();
 
         graph.freeze();
-        CHGraph chGraph = graph.getCHGraph(chConfig);
+        RoutingCHGraph chGraph = graph.getRoutingCHGraph(chConfig.getName());
         PrepareContractionHierarchies pch = PrepareContractionHierarchies.fromGraphHopperStorage(graph, chConfig);
         pch.doWork();
 
@@ -145,15 +147,13 @@ public class RandomCHRoutingTest {
         for (int j = 0; j < numQueryGraph; j++) {
             // add virtual nodes and edges, because they can change the routing behavior and/or produce bugs, e.g.
             // when via-points are used
-            List<QueryResult> qrs = createQueryResults(rnd, numVirtualNodes);
-            QueryGraph queryGraph = QueryGraph.create(graph, qrs);
-            QueryGraph chQueryGraph = QueryGraph.create(chGraph, qrs);
+            List<Snap> snaps = createRandomSnaps(graph.getBounds(), locationIndex, rnd, numVirtualNodes, false, EdgeFilter.ALL_EDGES);
+            QueryGraph queryGraph = QueryGraph.create(graph, snaps);
 
             int numQueries = 100;
             int numPathsNotFound = 0;
             List<String> strictViolations = new ArrayList<>();
             for (int i = 0; i < numQueries; i++) {
-                assertEquals("queryGraph and chQueryGraph should have equal number of nodes", queryGraph.getNodes(), chQueryGraph.getNodes());
                 int from = rnd.nextInt(queryGraph.getNodes());
                 int to = rnd.nextInt(queryGraph.getNodes());
                 Weighting w = queryGraph.wrapWeighting(weighting);
@@ -161,16 +161,17 @@ public class RandomCHRoutingTest {
                 RoutingAlgorithm refAlgo = new Dijkstra(queryGraph, w, traversalMode);
                 Path refPath = refAlgo.calcPath(from, to);
                 double refWeight = refPath.getWeight();
-                if (!refPath.isFound()) {
+
+                QueryRoutingCHGraph routingCHGraph = new QueryRoutingCHGraph(chGraph, queryGraph);
+                RoutingAlgorithm algo = new CHRoutingAlgorithmFactory(routingCHGraph).createAlgo(new PMap().putObject("stall_on_demand", true));
+
+                Path path = algo.calcPath(from, to);
+                if (refPath.isFound() && !path.isFound())
+                    fail("path not found for " + from + "->" + to + ", expected weight: " + refWeight);
+                assertEquals(refPath.isFound(), path.isFound());
+                if (!path.isFound()) {
                     numPathsNotFound++;
                     continue;
-                }
-
-                RoutingAlgorithm algo = pch.getRoutingAlgorithmFactory().createAlgo(chQueryGraph, AlgorithmOptions.start().
-                        hints(new PMap().putObject("stall_on_demand", true)).build());
-                Path path = algo.calcPath(from, to);
-                if (!path.isFound()) {
-                    fail("path not found for " + from + "->" + to + ", expected weight: " + refWeight);
                 }
 
                 double weight = path.getWeight();
@@ -194,35 +195,6 @@ public class RandomCHRoutingTest {
                         Helper.join("\n", strictViolations));
             }
         }
-    }
-
-    private List<QueryResult> createQueryResults(Random rnd, int numVirtualNodes) {
-        BBox bbox = graph.getBounds();
-        int count = 0;
-        List<QueryResult> qrs = new ArrayList<>(numVirtualNodes);
-        while (qrs.size() < numVirtualNodes) {
-            if (count > numVirtualNodes * 100) {
-                throw new IllegalArgumentException("Could not create enough virtual edges");
-            }
-            QueryResult qr = findQueryResult(rnd, bbox);
-            if (qr.getSnappedPosition().equals(QueryResult.Position.EDGE)) {
-                qrs.add(qr);
-            }
-            count++;
-        }
-        return qrs;
-    }
-
-    private QueryResult findQueryResult(Random rnd, BBox bbox) {
-        return locationIndex.findClosest(
-                randomDoubleInRange(rnd, bbox.minLat, bbox.maxLat),
-                randomDoubleInRange(rnd, bbox.minLon, bbox.maxLon),
-                EdgeFilter.ALL_EDGES
-        );
-    }
-
-    private double randomDoubleInRange(Random rnd, double min, double max) {
-        return min + rnd.nextDouble() * (max - min);
     }
 
     /**

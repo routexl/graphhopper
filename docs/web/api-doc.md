@@ -32,14 +32,14 @@ locale      | en      | The locale of the resulting turn instructions. E.g. `pt_
 instructions| true    | If instruction should be calculated and returned
 profile     | -       | The profile to be used for the route calculation.
 elevation   | false   | If `true` a third dimension - the elevation - is included in the polyline or in the GeoJson. IMPORTANT: If enabled you have to use a modified version of the decoding method or set points_encoded to `false`. See the points_encoded attribute for more details. Additionally a request can fail if the vehicle does not support elevation. See the features object for every vehicle.
-points_encoded   | true    | If `false` the coordinates in `point` and `snapped_waypoints` are returned as array using the order [lon,lat,elevation] for every point. If `true` the coordinates will be encoded as string leading to less bandwith usage. You'll need a special handling for the decoding of this string on the client-side. We provide open source code in [Java](https://github.com/graphhopper/graphhopper/blob/d70b63660ac5200b03c38ba3406b8f93976628a6/web/src/main/java/com/graphhopper/http/WebHelper.java#L43) and [JavaScript](https://github.com/graphhopper/graphhopper/blob/d70b63660ac5200b03c38ba3406b8f93976628a6/web/src/main/webapp/js/ghrequest.js#L139). It is especially important to use no 3rd party client if you set `elevation=true`!
-debug            | false   | If true, the output will be formated.
+points_encoded   | true    | If `false` the coordinates in `point` and `snapped_waypoints` are returned as array using the order [lon,lat,elevation] for every point. If `true` the coordinates will be encoded as string leading to less bandwidth usage. You'll need a special handling for the decoding of this string on the client-side. We provide open source code in [Java](https://github.com/graphhopper/graphhopper/blob/d70b63660ac5200b03c38ba3406b8f93976628a6/web/src/main/java/com/graphhopper/http/WebHelper.java#L43) and [JavaScript](https://github.com/graphhopper/graphhopper/blob/d70b63660ac5200b03c38ba3406b8f93976628a6/web/src/main/webapp/js/ghrequest.js#L139). It is especially important to use no 3rd party client if you set `elevation=true`!
+debug            | false   | If true, the output will be formatted.
 calc_points      | true    | If the points for the route should be calculated at all printing out only distance and time.
 point_hint       | -       | Optional parameter. Specifies a hint for each `point` parameter to prefer a certain street for the closest location lookup. E.g. if there is an address or house with two or more neighboring streets you can control for which street the closest location is looked up.
 snap_prevention  | -       | Optional parameter to avoid snapping to a certain road class or road environment. Current supported values: `motorway`, `trunk`, `ferry`, `tunnel`, `bridge` and `ford`. Multiple values are specified like `snap_prevention=ferry&snap_prevention=motorway`
 details          | -       | Optional parameter. You can request additional details for the route: `average_speed`, `street_name`, `edge_id`, `road_class`, `road_environment`, `max_speed` and `time` (and see which other values are configured in `graph.encoded_values`).  Multiple values are specified like `details=average_speed&details=time`. The returned format for one detail segment is `[fromRef, toRef, value]`. The `ref` references the points of the response. Value can also be `null` if the property does not exist for one detail segment.
 curbside         | any     | Optional parameter applicable to edge-based routing only. It specifies on which side a query point should be relative to the driver when she leaves/arrives at a start/target/via point. Possible values: right, left, any. Specify for every point parameter. See similar heading parameter.
-force_curbside   | false   | True if the curbside parameters should lead to an exception if they cannot be fulfilled.
+force_curbside   | true    | Optional parameter. If it is set to true there will be an exception in case the curbside parameters cannot be fulfilled (e.g. specifying the wrong side for one-ways).
 
 ### Hybrid
 
@@ -93,8 +93,6 @@ paths[0].instructions[0].distance             | The distance for this instructio
 paths[0].instructions[0].time                 | The duration for this instruction, in ms
 paths[0].instructions[0].interval             | An array containing the first and the last index (relative to paths[0].points) of the points for this instruction. This is useful to know for which part of the route the instructions are valid.
 paths[0].instructions[0].sign                 | A number which specifies the sign to show e.g. 2 for a right turn.<br>KEEP_LEFT=-7<br>TURN_SHARP_LEFT = -3<br>TURN_LEFT = -2<br>TURN_SLIGHT_LEFT = -1<br>CONTINUE_ON_STREET = 0<br>TURN_SLIGHT_RIGHT = 1<br>TURN_RIGHT = 2<br>TURN_SHARP_RIGHT = 3<br>FINISH = 4<br>REACHED_VIA = 5<br>USE_ROUNDABOUT = 6<br>KEEP_RIGHT=7<br>implement some default for all other
-paths[0].instructions[0].annotation_text      | [optional] A text describing the instruction in more detail, e.g. like surface of the way, warnings or involved costs
-paths[0].instructions[0].annotation_importance| [optional] 0 stands for INFO, 1 for warning, 2 for costs, 3 for costs and warning
 paths[0].instructions[0].exit_number          | [optional] Only available for USE_ROUNDABOUT instructions. The count of exits at which the route leaves the roundabout.
 paths[0].instructions[0].exited               | [optional] Only available for USE_ROUNDABOUT instructions. True if the roundabout should be exited. False if a via point or end is placed in the roundabout, thus, the roundabout should not be exited due to this instruction.
 paths[0].instructions[0].turn_angle           | [optional] Only available for USE_ROUNDABOUT instructions. The radian of the route within the roundabout: `0 < r < 2*PI` for clockwise and `-2PI < r < 0` for counterclockwise transit. `NaN` if the direction of rotation is undefined.
@@ -224,7 +222,7 @@ HTTP error code | Reason
 
 ## Isochrone
 
-In addition to routing, the end point to obtain an isochrone is `/isochrone`.
+In addition to routing, the end point to obtain an isochrone is `/isochrone`. To get a point list instead of a polygon you can have a look into the /spt endpoint.
 
 [http://localhost:8989/isochrone](http://localhost:8989/isochrone)
 
@@ -233,9 +231,8 @@ All parameters are shown in the following table.
 Parameter                   | Default | Description
 :---------------------------|:--------|:-----------
 profile                     |         | The profile to be used for the isochrone calculation.
-buckets                     | 1       | Number by which to divide the given `time_limit` to create `buckets` nested isochrones of time intervals `time_limit/buckets`, `time_limit/(buckets - 1)`, ... , `time_limit`. Applies analogously to `distance_limit`.
+buckets                     | 1       | Number by which to divide the given `time_limit` to create `buckets` nested isochrones of time intervals `time_limit-n*time_limit/buckets` for `n=[0,buckets)`. Applies analogously to `distance_limit`.
 reverse_flow                | false   | If false the flow goes from point to the polygon, if true the flow goes from the polygon inside to the point. Example usage for false: *How many potential customer can be reached within 30min travel time from your store* vs. true: *How many customers can reach your store within 30min travel time.* (optional, default to false)
 point                       |         | Specify the start coordinate (required). A string organized as `latitude,longitude`.
-result                      | polygon | Can be "pointlist" or "polygon".
 time_limit                  | 600     | Specify which time the vehicle should travel. In seconds. (optional, default to 600)
 distance_limit              | -1      | Specify which distance the vehicle should travel. In meter. (optional, default to -1)

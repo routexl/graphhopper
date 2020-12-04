@@ -194,7 +194,7 @@ public class LandmarkStorage implements Storable<LandmarkStorage> {
     }
 
     /**
-     * This weighting is used for the selection heuristic and is per default not the weighting specified in the contructor.
+     * This weighting is used for the selection heuristic and is per default not the weighting specified in the constructor.
      * The special weighting leads to a much better distribution of the landmarks and results in better response times.
      */
     public void setLMSelectionWeighting(Weighting lmSelectionWeighting) {
@@ -264,7 +264,7 @@ public class LandmarkStorage implements Storable<LandmarkStorage> {
         String additionalInfo = "";
         // guess the factor
         if (factor <= 0) {
-            // A 'factor' is necessary to store the weight in just a short value but without loosing too much precision.
+            // A 'factor' is necessary to store the weight in just a short value but without losing too much precision.
             // This factor is rather delicate to pick, we estimate it from an exploration with some "test landmarks",
             // see estimateMaxWeight. If we pick the distance too big for small areas this could lead to (slightly)
             // suboptimal routes as there will be too big rounding errors. But picking it too small is bad for performance
@@ -573,14 +573,12 @@ public class LandmarkStorage implements Storable<LandmarkStorage> {
             return false;
         if (subnetworkFrom != subnetworkTo) {
             throw new ConnectionNotFoundException("Connection between locations not found. Different subnetworks " + subnetworkFrom
-                    + " vs. " + subnetworkTo, new HashMap<String, Object>());
+                    + " vs. " + subnetworkTo, new HashMap<>());
         }
 
-        int[] tmpIDs = landmarkIDs.get(subnetworkFrom);
-
-        // kind of code duplication to approximate
-        List<Map.Entry<Integer, Integer>> list = new ArrayList<>(tmpIDs.length);
-        for (int lmIndex = 0; lmIndex < tmpIDs.length; lmIndex++) {
+        // See the similar formula in LMApproximator.approximateForLandmark
+        List<Map.Entry<Integer, Integer>> list = new ArrayList<>(landmarks);
+        for (int lmIndex = 0; lmIndex < landmarks; lmIndex++) {
             int fromWeight = getFromWeight(lmIndex, toNode) - getFromWeight(lmIndex, fromNode);
             int toWeight = getToWeight(lmIndex, fromNode) - getToWeight(lmIndex, toNode);
 

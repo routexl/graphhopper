@@ -420,7 +420,7 @@ public class AlternativeRoute implements RoutingAlgorithm {
 
                         // plateaus.add(new PlateauInfo(altName, plateauEdges));
                         if (sortBy < worstSortBy || alternatives.size() < maxPaths) {
-                            Path path = BidirPathExtractor.extractPath(graph, weighting, fromSPTEntry, toSPTEntry, weight);
+                            Path path = DefaultBidirPathExtractor.extractPath(graph, weighting, fromSPTEntry, toSPTEntry, weight);
 
                             // for now do not add alternatives to set, if we do we need to remove then on alternatives.clear too (see below)
                             // AtomicInteger tid = addToMap(traversalIDMap, path);
@@ -523,7 +523,7 @@ public class AlternativeRoute implements RoutingAlgorithm {
                 int tid = traversalMode.createTraversalId(iterState, false);
                 set.add(tid);
                 if (startTID.get() < 0) {
-                    // for node based traversal we need to explicitely add base node as starting node and to list
+                    // for node based traversal we need to explicitly add base node as starting node and to list
                     if (!traversalMode.isEdgeBased()) {
                         tid = iterState.getBaseNode();
                         set.add(tid);

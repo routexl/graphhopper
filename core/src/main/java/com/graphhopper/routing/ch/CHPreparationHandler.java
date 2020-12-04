@@ -19,7 +19,6 @@ package com.graphhopper.routing.ch;
 
 import com.graphhopper.GraphHopperConfig;
 import com.graphhopper.config.CHProfile;
-import com.graphhopper.routing.RoutingAlgorithmFactory;
 import com.graphhopper.storage.CHConfig;
 import com.graphhopper.storage.GraphHopperStorage;
 import com.graphhopper.storage.StorableProperties;
@@ -36,7 +35,7 @@ import static com.graphhopper.util.Helper.createFormatter;
 import static com.graphhopper.util.Helper.getMemInfo;
 
 /**
- * This class handles the different CH preparations and serves the corresponding {@link RoutingAlgorithmFactory}
+ * This class handles the different CH preparations
  *
  * @author Peter Karich
  * @author easbar
@@ -48,7 +47,6 @@ public class CHPreparationHandler {
     // the actual Weightings)
     private final List<CHProfile> chProfiles = new ArrayList<>();
     private final List<CHConfig> chConfigs = new ArrayList<>();
-    private boolean disablingAllowed = false;
     private int preparationThreads;
     private ExecutorService threadPool;
     private PMap pMap = new PMap();
@@ -67,25 +65,12 @@ public class CHPreparationHandler {
             throw new IllegalStateException("Use profiles_ch instead of prepare.ch.edge_based, see #1922 and docs/core/profiles.md");
 
         setPreparationThreads(ghConfig.getInt(CH.PREPARE + "threads", getPreparationThreads()));
-        setDisablingAllowed(ghConfig.getBool(CH.INIT_DISABLING_ALLOWED, isDisablingAllowed()));
         setCHProfiles(ghConfig.getCHProfiles());
         pMap = ghConfig.asPMap();
     }
 
     public final boolean isEnabled() {
         return !chProfiles.isEmpty() || !chConfigs.isEmpty() || !preparations.isEmpty();
-    }
-
-    public final boolean isDisablingAllowed() {
-        return disablingAllowed;
-    }
-
-    /**
-     * This method specifies if it is allowed to disable CH routing at runtime via routing hints.
-     */
-    public final CHPreparationHandler setDisablingAllowed(boolean disablingAllowed) {
-        this.disablingAllowed = disablingAllowed;
-        return this;
     }
 
     /**
@@ -161,14 +146,6 @@ public class CHPreparationHandler {
         return preparations;
     }
 
-    /**
-     * @return a {@link RoutingAlgorithmFactory} for CH or throw an error if no preparation is available for the given
-     * profile name
-     */
-    public RoutingAlgorithmFactory getAlgorithmFactory(String profile) {
-        return getPreparation(profile).getRoutingAlgorithmFactory();
-    }
-
     public PrepareContractionHierarchies getPreparation(String profile) {
         if (preparations.isEmpty())
             throw new IllegalStateException("No CH preparations added yet");
@@ -208,17 +185,14 @@ public class CHPreparationHandler {
             LOGGER.info((++counter) + "/" + preparations.size() + " calling " +
                     "CH prepare.doWork for profile '" + prepare.getCHConfig().getName() + "' " + prepare.getCHConfig().getTraversalMode() + " ... (" + getMemInfo() + ")");
             final String name = prepare.getCHConfig().getName();
-            completionService.submit(new Runnable() {
-                @Override
-                public void run() {
-                    // toString is not taken into account so we need to cheat, see http://stackoverflow.com/q/6113746/194609 for other options
-                    Thread.currentThread().setName(name);
-                    prepare.doWork();
-                    if (closeEarly)
-                        prepare.close();
+            completionService.submit(() -> {
+                // toString is not taken into account so we need to cheat, see http://stackoverflow.com/q/6113746/194609 for other options
+                Thread.currentThread().setName(name);
+                prepare.doWork();
+                if (closeEarly)
+                    prepare.close();
 
-                    properties.put(CH.PREPARE + "date." + name, createFormatter().format(new Date()));
-                }
+                properties.put(CH.PREPARE + "date." + name, createFormatter().format(new Date()));
             }, name);
         }
 
@@ -232,6 +206,7 @@ public class CHPreparationHandler {
             threadPool.shutdownNow();
             throw new RuntimeException(e);
         }
+        LOGGER.info("Finished CH preparation, {}", getMemInfo());
     }
 
     public void createPreparations(GraphHopperStorage ghStorage) {
@@ -240,6 +215,7 @@ public class CHPreparationHandler {
         if (!hasCHConfigs())
             throw new IllegalStateException("No CH profiles found");
 
+        LOGGER.info("Creating CH preparations, {}", getMemInfo());
         for (CHConfig chConfig : chConfigs) {
             addPreparation(createCHPreparation(ghStorage, chConfig));
         }

@@ -14,7 +14,7 @@ import com.graphhopper.storage.Graph;
 import com.graphhopper.storage.GraphEdgeIdFinder;
 import com.graphhopper.storage.NodeAccess;
 import com.graphhopper.storage.index.LocationIndex;
-import com.graphhopper.storage.index.QueryResult;
+import com.graphhopper.storage.index.Snap;
 import com.graphhopper.util.*;
 import com.graphhopper.util.shapes.GHPoint;
 import io.dropwizard.jersey.params.LongParam;
@@ -95,12 +95,12 @@ public class SPTResource {
         FlagEncoder encoder = encodingManager.getEncoder(profile.getVehicle());
         EdgeFilter edgeFilter = DefaultEdgeFilter.allEdges(encoder);
         LocationIndex locationIndex = graphHopper.getLocationIndex();
-        QueryResult qr = locationIndex.findClosest(point.get().lat, point.get().lon, edgeFilter);
-        if (!qr.isValid())
+        Snap snap = locationIndex.findClosest(point.get().lat, point.get().lon, edgeFilter);
+        if (!snap.isValid())
             throw new IllegalArgumentException("Point not found:" + point);
 
         Graph graph = graphHopper.getGraphHopperStorage();
-        QueryGraph queryGraph = QueryGraph.create(graph, qr);
+        QueryGraph queryGraph = QueryGraph.create(graph, snap);
         NodeAccess nodeAccess = queryGraph.getNodeAccess();
 
         Weighting weighting = graphHopper.createWeighting(profile, hintsMap);
@@ -111,10 +111,10 @@ public class SPTResource {
         ShortestPathTree shortestPathTree = new ShortestPathTree(queryGraph, weighting, reverseFlow, traversalMode);
 
         if (distanceInMeter.get() > 0) {
-            shortestPathTree.setDistanceLimit(distanceInMeter.get() + Math.max(distanceInMeter.get() * 0.14, 2_000));
+            shortestPathTree.setDistanceLimit(distanceInMeter.get());
         } else {
             double limit = timeLimitInSeconds.get() * 1000;
-            shortestPathTree.setTimeLimit(limit + Math.max(limit * 0.14, 200_000));
+            shortestPathTree.setTimeLimit(limit);
         }
 
         final String COL_SEP = ",", LINE_SEP = "\n";
@@ -143,7 +143,7 @@ public class SPTResource {
                 }
                 sb.append(LINE_SEP);
                 writer.write(sb.toString());
-                shortestPathTree.search(qr.getClosestNode(), l -> {
+                shortestPathTree.search(snap.getClosestNode(), l -> {
                     IsoLabelWithCoordinates label = isoLabelWithCoordinates(nodeAccess, l);
                     sb.setLength(0);
                     for (int colIndex = 0; colIndex < columns.size(); colIndex++) {
@@ -177,16 +177,16 @@ public class SPTResource {
                                 sb.append(label.prevCoordinate == null ? 0 : label.prevTimeMillis);
                                 continue;
                             case "longitude":
-                                sb.append(label.coordinate.lon);
+                                sb.append(Helper.round6(label.coordinate.lon));
                                 continue;
                             case "prev_longitude":
-                                sb.append(label.prevCoordinate == null ? null : label.prevCoordinate.lon);
+                                sb.append(label.prevCoordinate == null ? null : Helper.round6(label.prevCoordinate.lon));
                                 continue;
                             case "latitude":
-                                sb.append(label.coordinate.lat);
+                                sb.append(Helper.round6(label.coordinate.lat));
                                 continue;
                             case "prev_latitude":
-                                sb.append(label.prevCoordinate == null ? null : label.prevCoordinate.lat);
+                                sb.append(label.prevCoordinate == null ? null : Helper.round6(label.prevCoordinate.lat));
                                 continue;
                         }
 

@@ -23,6 +23,7 @@ import com.graphhopper.routing.util.TraversalMode;
 import com.graphhopper.storage.*;
 
 import java.util.PriorityQueue;
+import java.util.function.Supplier;
 
 import static com.graphhopper.util.EdgeIterator.ANY_EDGE;
 
@@ -36,21 +37,22 @@ import static com.graphhopper.util.EdgeIterator.ANY_EDGE;
  */
 public abstract class AbstractBidirCHAlgo extends AbstractBidirAlgo implements BidirRoutingAlgorithm {
     protected final RoutingCHGraph graph;
-    protected RoutingCHEdgeExplorer allEdgeExplorer;
+    protected final NodeAccess nodeAccess;
     protected RoutingCHEdgeExplorer inEdgeExplorer;
     protected RoutingCHEdgeExplorer outEdgeExplorer;
     protected CHEdgeFilter levelEdgeFilter;
+    private Supplier<BidirPathExtractor> pathExtractorSupplier;
 
     public AbstractBidirCHAlgo(RoutingCHGraph graph, TraversalMode tMode) {
         super(tMode);
         this.graph = graph;
         if (graph.hasTurnCosts() && !tMode.isEdgeBased())
             throw new IllegalStateException("Weightings supporting turn costs cannot be used with node-based traversal mode");
-        this.nodeAccess = graph.getGraph().getNodeAccess();
-        allEdgeExplorer = graph.createAllEdgeExplorer();
+        this.nodeAccess = graph.getBaseGraph().getNodeAccess();
         outEdgeExplorer = graph.createOutEdgeExplorer();
         inEdgeExplorer = graph.createInEdgeExplorer();
         levelEdgeFilter = new CHLevelEdgeFilter(graph);
+        pathExtractorSupplier = () -> new NodeBasedCHBidirPathExtractor(graph);
         int size = Math.min(Math.max(200, graph.getNodes() / 10), 150_000);
         initCollections(size);
     }
@@ -64,19 +66,16 @@ public abstract class AbstractBidirCHAlgo extends AbstractBidirAlgo implements B
      * Creates a new entry of the shortest path tree (a {@link SPTEntry} or one of its subclasses) during a dijkstra
      * expansion.
      *
-     * @param edge    the edge that is currently processed for the expansion
+     * @param edge    the id of the edge that is currently processed for the expansion
+     * @param adjNode the adjacent node of the edge
      * @param incEdge the id of the edge that is incoming to the node the edge is pointed at. usually this is the same as
-     *                edge.getEdge(), but for edge-based CH and in case edge is a shortcut incEdge is the original edge
+     *                edge, but for edge-based CH and in case edge corresponds to a shortcut incEdge is the original edge
      *                that is incoming to the node
      * @param weight  the weight the shortest path three entry should carry
      * @param parent  the parent entry of in the shortest path tree
      * @param reverse true if we are currently looking at the backward search, false otherwise
      */
-    protected abstract SPTEntry createEntry(RoutingCHEdgeIteratorState edge, int incEdge, double weight, SPTEntry parent, boolean reverse);
-
-    protected BidirPathExtractor createPathExtractor(RoutingCHGraph graph) {
-        return new NodeBasedCHBidirPathExtractor(graph);
-    }
+    protected abstract SPTEntry createEntry(int edge, int adjNode, int incEdge, double weight, SPTEntry parent, boolean reverse);
 
     @Override
     protected void postInitFrom() {
@@ -85,12 +84,7 @@ public abstract class AbstractBidirCHAlgo extends AbstractBidirAlgo implements B
         } else {
             // need to use a local reference here, because levelEdgeFilter is modified when calling fillEdgesFromUsingFilter
             final CHEdgeFilter tmpFilter = levelEdgeFilter;
-            fillEdgesFromUsingFilter(new CHEdgeFilter() {
-                @Override
-                public boolean accept(RoutingCHEdgeIteratorState edgeState) {
-                    return (tmpFilter == null || tmpFilter.accept(edgeState)) && edgeState.getOrigEdgeFirst() == fromOutEdge;
-                }
-            });
+            fillEdgesFromUsingFilter(edgeState -> (tmpFilter == null || tmpFilter.accept(edgeState)) && edgeState.getOrigEdgeFirst() == fromOutEdge);
         }
     }
 
@@ -100,12 +94,7 @@ public abstract class AbstractBidirCHAlgo extends AbstractBidirAlgo implements B
             fillEdgesToUsingFilter(levelEdgeFilter);
         } else {
             final CHEdgeFilter tmpFilter = levelEdgeFilter;
-            fillEdgesToUsingFilter(new CHEdgeFilter() {
-                @Override
-                public boolean accept(RoutingCHEdgeIteratorState edgeState) {
-                    return (tmpFilter == null || tmpFilter.accept(edgeState)) && edgeState.getOrigEdgeLast() == toInEdge;
-                }
-            });
+            fillEdgesToUsingFilter(edgeState -> (tmpFilter == null || tmpFilter.accept(edgeState)) && edgeState.getOrigEdgeLast() == toInEdge);
         }
     }
 
@@ -193,12 +182,12 @@ public abstract class AbstractBidirCHAlgo extends AbstractBidirAlgo implements B
             final int traversalId = getTraversalId(iter, origEdgeId, reverse);
             SPTEntry entry = bestWeightMap.get(traversalId);
             if (entry == null) {
-                entry = createEntry(iter, origEdgeId, weight, currEdge, reverse);
+                entry = createEntry(iter.getEdge(), iter.getAdjNode(), origEdgeId, weight, currEdge, reverse);
                 bestWeightMap.put(traversalId, entry);
                 prioQueue.add(entry);
             } else if (entry.getWeightOfVisitedPath() > weight) {
                 prioQueue.remove(entry);
-                updateEntry(entry, iter, origEdgeId, weight, currEdge, reverse);
+                updateEntry(entry, iter.getEdge(), iter.getAdjNode(), origEdgeId, weight, currEdge, reverse);
                 prioQueue.add(entry);
             } else
                 continue;
@@ -219,14 +208,19 @@ public abstract class AbstractBidirCHAlgo extends AbstractBidirAlgo implements B
         return edgeWeight + turnCosts;
     }
 
-    protected void updateEntry(SPTEntry entry, RoutingCHEdgeIteratorState edge, int edgeId, double weight, SPTEntry parent, boolean reverse) {
-        entry.edge = edge.getEdge();
+    protected void updateEntry(SPTEntry entry, int edge, int adjNode, int incEdge, double weight, SPTEntry parent, boolean reverse) {
+        entry.edge = edge;
         entry.weight = weight;
         entry.parent = parent;
     }
 
     protected boolean accept(RoutingCHEdgeIteratorState edge, SPTEntry currEdge, boolean reverse) {
-        return accept(edge, getIncomingEdge(currEdge));
+        // for edge-based traversal we leave it for TurnWeighting to decide whether or not a u-turn is acceptable,
+        // but for node-based traversal we exclude such a turn for performance reasons already here
+        if (!traversalMode.isEdgeBased() && edge.getEdge() == getIncomingEdge(currEdge))
+            return false;
+
+        return levelEdgeFilter == null || levelEdgeFilter.accept(edge);
     }
 
     protected int getOrigEdgeId(RoutingCHEdgeIteratorState edge, boolean reverse) {
@@ -234,16 +228,12 @@ public abstract class AbstractBidirCHAlgo extends AbstractBidirAlgo implements B
     }
 
     protected int getTraversalId(RoutingCHEdgeIteratorState edge, int origEdgeId, boolean reverse) {
-        return getTraversalId(edge, reverse);
-    }
-
-    protected int getTraversalId(RoutingCHEdgeIteratorState edge, boolean reverse) {
         return traversalMode.createTraversalId(edge.getBaseNode(), edge.getAdjNode(), edge.getEdge(), reverse);
     }
 
     @Override
     protected int getOtherNode(int edge, int node) {
-        return graph.getOtherNode(edge, node);
+        return graph.getBaseGraph().getOtherNode(edge, node);
     }
 
     protected double calcWeight(RoutingCHEdgeIteratorState iter, SPTEntry currEdge, boolean reverse) {
@@ -258,22 +248,21 @@ public abstract class AbstractBidirCHAlgo extends AbstractBidirAlgo implements B
     @Override
     protected Path extractPath() {
         if (finished())
-            return createPathExtractor(graph).extract(bestFwdEntry, bestBwdEntry, bestWeight);
+            return createPathExtractor().extract(bestFwdEntry, bestBwdEntry, bestWeight);
 
         return createEmptyPath();
     }
 
-    protected boolean accept(RoutingCHEdgeIteratorState iter, int prevOrNextEdgeId) {
-        // for edge-based traversal we leave it for TurnWeighting to decide whether or not a u-turn is acceptable,
-        // but for node-based traversal we exclude such a turn for performance reasons already here
-        if (!traversalMode.isEdgeBased() && iter.getEdge() == prevOrNextEdgeId)
-            return false;
+    public void setPathExtractorSupplier(Supplier<BidirPathExtractor> pathExtractorSupplier) {
+        this.pathExtractorSupplier = pathExtractorSupplier;
+    }
 
-        return levelEdgeFilter == null || levelEdgeFilter.accept(iter);
+    BidirPathExtractor createPathExtractor() {
+        return pathExtractorSupplier.get();
     }
 
     protected Path createEmptyPath() {
-        return new Path(graph.getGraph());
+        return new Path(graph.getBaseGraph());
     }
 
     @Override
@@ -287,7 +276,7 @@ public abstract class AbstractBidirCHAlgo extends AbstractBidirAlgo implements B
 
         public CHLevelEdgeFilter(RoutingCHGraph graph) {
             this.graph = graph;
-            maxNodes = graph.getBaseGraph().getNodes();
+            maxNodes = graph.getBaseGraph().getBaseGraph().getNodes();
         }
 
         @Override

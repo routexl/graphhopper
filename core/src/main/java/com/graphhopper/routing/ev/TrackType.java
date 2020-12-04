@@ -20,15 +20,15 @@ package com.graphhopper.routing.ev;
 import com.graphhopper.util.Helper;
 
 /**
- * This enum defines the track type of an edge which describes how
- * well-maintained a certain track is. All edges that do not fit get "other" as
- * value.
- * 
- * @see https://wiki.openstreetmap.org/wiki/Tracktype
+ * This enum defines the track type of an edge which describes how well-maintained a certain track is.
+ * If not tagged the value will be MISSING (the default and easiest grad) and all edges that do not fit get OTHER as
+ * value (the worst grade).
+ *
+ * @see <a href="https://wiki.openstreetmap.org/wiki/Tracktype">Tracktype Wiki</a>
  */
 public enum TrackType {
-    OTHER("other"), GRADE1("grade1"), GRADE2("grade2"), GRADE3("grade3"), GRADE4("grade4"),
-    GRADE5("grade5");
+    MISSING("missing"), GRADE1("grade1"), GRADE2("grade2"),
+    GRADE3("grade3"), GRADE4("grade4"), GRADE5("grade5"), OTHER("other");
 
     public static final String KEY = "track_type";
 
@@ -44,8 +44,8 @@ public enum TrackType {
     }
 
     public static TrackType find(String name) {
-        if (name == null)
-            return OTHER;
+        if (Helper.isEmpty(name))
+            return MISSING;
         try {
             return TrackType.valueOf(Helper.toUpperCase(name));
         } catch (IllegalArgumentException ex) {

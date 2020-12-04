@@ -24,6 +24,7 @@ import org.locationtech.jts.geom.Geometry;
 import org.locationtech.jts.geom.prep.PreparedGeometryFactory;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -45,8 +46,8 @@ final class PriorityCalculator {
                 priorityList.add(GeoToValueEntry.create(priorityKey, new PreparedGeometryFactory().create(geometry),
                         (Number) value, 1, 0, 1));
             } else {
-                if (!(value instanceof Map))
-                    throw new IllegalArgumentException(priorityKey + ": non-root entries require a map but was: " + value.getClass().getSimpleName());
+                if (!(value instanceof LinkedHashMap))
+                    throw new IllegalArgumentException(priorityKey + ": non-root entries require a sorted map (LinkedHashMap) but was: " + value.getClass().getSimpleName());
                 final double defaultPriority = 1, minPriority = 0, maxPriority = 1;
                 EncodedValue encodedValue = getEV(lookup, "priority", key);
                 if (encodedValue instanceof EnumEncodedValue) {
@@ -72,7 +73,7 @@ final class PriorityCalculator {
     static EncodedValue getEV(EncodedValueLookup lookup, String name, String key) {
         if (!lookup.hasEncodedValue(key))
             throw new IllegalArgumentException("Cannot find encoded value '" + key + "' specified in '" + name
-                    + "'. Available: " + names(lookup.getAllShared()));
+                    + "'. Available: " + names(lookup.getEncodedValues()));
         return lookup.getEncodedValue(key, EncodedValue.class);
     }
 
@@ -92,8 +93,8 @@ final class PriorityCalculator {
         for (int i = 0; i < priorityList.size(); i++) {
             EdgeToValueEntry entry = priorityList.get(i);
             double value = entry.getValue(edge, reverse);
+            if (value == 0) return 0;
             priority *= value;
-            if (priority == 0) return 0;
         }
         return priority;
     }

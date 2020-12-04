@@ -18,12 +18,14 @@
 package com.graphhopper.routing.util;
 
 import com.graphhopper.ResponsePath;
-import com.graphhopper.routing.*;
+import com.graphhopper.routing.AlgorithmOptions;
+import com.graphhopper.routing.Path;
+import com.graphhopper.routing.RoutingAlgorithm;
+import com.graphhopper.routing.RoutingAlgorithmFactorySimple;
 import com.graphhopper.routing.querygraph.QueryGraph;
-import com.graphhopper.storage.CHGraph;
 import com.graphhopper.storage.Graph;
 import com.graphhopper.storage.index.LocationIndex;
-import com.graphhopper.storage.index.QueryResult;
+import com.graphhopper.storage.index.Snap;
 import com.graphhopper.util.*;
 import com.graphhopper.util.shapes.GHPoint;
 
@@ -37,20 +39,19 @@ import java.util.Locale;
 public class TestAlgoCollector {
     public final List<String> errors = new ArrayList<>();
     private final String name;
-    private final DistanceCalc distCalc = Helper.DIST_EARTH;
+    private final DistanceCalc distCalc = DistanceCalcEarth.DIST_EARTH;
     private final TranslationMap trMap = new TranslationMap().doImport();
 
     public TestAlgoCollector(String name) {
         this.name = name;
     }
 
-    public TestAlgoCollector assertDistance(EncodingManager encodingManager, AlgoHelperEntry algoEntry, List<QueryResult> queryList,
+    public TestAlgoCollector assertDistance(EncodingManager encodingManager, AlgoHelperEntry algoEntry, List<Snap> queryList,
                                             OneRun oneRun) {
         List<Path> altPaths = new ArrayList<>();
-        QueryGraph queryGraph = QueryGraph.create(algoEntry.getForQueryGraph(), queryList);
-        RoutingAlgorithmFactory factory = algoEntry.createRoutingFactory();
+        QueryGraph queryGraph = QueryGraph.create(algoEntry.graph, queryList);
         for (int i = 0; i < queryList.size() - 1; i++) {
-            RoutingAlgorithm algo = factory.createAlgo(queryGraph, algoEntry.getAlgorithmOptions());
+            RoutingAlgorithm algo = algoEntry.createAlgo(queryGraph);
 
 //            if (!algoEntry.getExpectedAlgo().equals(algo.toString())) {
 //                errors.add("Algorithm expected " + algoEntry.getExpectedAlgo() + " but was " + algo.toString());
@@ -65,8 +66,7 @@ public class TestAlgoCollector {
                 setCalcPoints(true).
                 setSimplifyResponse(false).
                 setEnableInstructions(true);
-        ResponsePath responsePath = new ResponsePath();
-        pathMerger.doWork(responsePath, altPaths, encodingManager, trMap.getWithFallBack(Locale.US));
+        ResponsePath responsePath = pathMerger.doWork(new PointList(), altPaths, encodingManager, trMap.getWithFallBack(Locale.US));
 
         if (responsePath.hasErrors()) {
             errors.add("response for " + algoEntry + " contains errors. Expected distance: " + oneRun.getDistance()
@@ -75,7 +75,7 @@ public class TestAlgoCollector {
         }
 
         PointList pointList = responsePath.getPoints();
-        double tmpDist = pointList.calcDistance(distCalc);
+        double tmpDist = distCalc.calcDistance(pointList);
         if (Math.abs(responsePath.getDistance() - tmpDist) > 2) {
             errors.add(algoEntry + " path.getDistance was  " + responsePath.getDistance()
                     + "\t pointList.calcDistance was " + tmpDist + "\t (expected points " + oneRun.getLocs()
@@ -98,7 +98,7 @@ public class TestAlgoCollector {
     }
 
     void queryIndex(Graph g, LocationIndex idx, double lat, double lon, double expectedDist) {
-        QueryResult res = idx.findClosest(lat, lon, EdgeFilter.ALL_EDGES);
+        Snap res = idx.findClosest(lat, lon, EdgeFilter.ALL_EDGES);
         if (!res.isValid()) {
             errors.add("node not found for " + lat + "," + lon);
             return;
@@ -134,27 +134,25 @@ public class TestAlgoCollector {
 
     public static class AlgoHelperEntry {
         private final LocationIndex idx;
-        private Graph forQueryGraph;
+        private Graph graph;
+        private boolean ch;
         private String expectedAlgo;
         private AlgorithmOptions opts;
 
-        public AlgoHelperEntry(Graph g, AlgorithmOptions opts, LocationIndex idx, String expectedAlgo) {
-            this.forQueryGraph = g;
+        public AlgoHelperEntry(Graph g, boolean ch, AlgorithmOptions opts, LocationIndex idx, String expectedAlgo) {
+            this.graph = g;
+            this.ch = ch;
             this.opts = opts;
             this.idx = idx;
             this.expectedAlgo = expectedAlgo;
-        }
-
-        public Graph getForQueryGraph() {
-            return forQueryGraph;
         }
 
         public void setAlgorithmOptions(AlgorithmOptions opts) {
             this.opts = opts;
         }
 
-        public RoutingAlgorithmFactory createRoutingFactory() {
-            return new RoutingAlgorithmFactorySimple();
+        public RoutingAlgorithm createAlgo(Graph graph) {
+            return new RoutingAlgorithmFactorySimple().createAlgo(graph, opts);
         }
 
         public AlgorithmOptions getAlgorithmOptions() {
@@ -174,7 +172,7 @@ public class TestAlgoCollector {
             String algo = opts.getAlgorithm();
             if (getExpectedAlgo().contains("landmarks"))
                 algo += "|landmarks";
-            if (forQueryGraph instanceof CHGraph)
+            if (ch)
                 algo += "|ch";
 
             return "algoEntry(" + algo + ")";
@@ -221,12 +219,12 @@ public class TestAlgoCollector {
             assumptions.get(index).distance = dist;
         }
 
-        public List<QueryResult> getList(LocationIndex idx, EdgeFilter edgeFilter) {
-            List<QueryResult> qr = new ArrayList<>();
+        public List<Snap> getList(LocationIndex idx, EdgeFilter edgeFilter) {
+            List<Snap> snap = new ArrayList<>();
             for (AssumptionPerPath p : assumptions) {
-                qr.add(idx.findClosest(p.lat, p.lon, edgeFilter));
+                snap.add(idx.findClosest(p.lat, p.lon, edgeFilter));
             }
-            return qr;
+            return snap;
         }
 
         @Override

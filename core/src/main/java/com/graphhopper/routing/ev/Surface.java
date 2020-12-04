@@ -20,13 +20,17 @@ package com.graphhopper.routing.ev;
 import com.graphhopper.util.Helper;
 
 /**
- * This enum defines the road surface of an edge like unpaved or asphalt. If not tagged it will be "other".
+ * This enum defines the road surface of an edge like unpaved or asphalt. If not tagged the value will be MISSING, which
+ * the default and best surface value (as surface is currently often not tagged). All unknown surface tags will get
+ * OTHER (the worst surface).
  */
 public enum Surface {
-    OTHER("other"),
+    // Order is important to make it roughly comparable
+    MISSING("missing"),
     PAVED("paved"), ASPHALT("asphalt"), CONCRETE("concrete"), PAVING_STONES("paving_stones"), COBBLESTONE("cobblestone"),
     UNPAVED("unpaved"), COMPACTED("compacted"), FINE_GRAVEL("fine_gravel"), GRAVEL("gravel"),
-    GROUND("ground"), DIRT("dirt"), GRASS("grass"), SAND("sand");
+    GROUND("ground"), DIRT("dirt"), GRASS("grass"), SAND("sand"),
+    OTHER("other");
 
     public static final String KEY = "surface";
 
@@ -42,8 +46,8 @@ public enum Surface {
     }
 
     public static Surface find(String name) {
-        if (name == null)
-            return OTHER;
+        if (Helper.isEmpty(name))
+            return MISSING;
         try {
             return Surface.valueOf(Helper.toUpperCase(name));
         } catch (IllegalArgumentException ex) {
